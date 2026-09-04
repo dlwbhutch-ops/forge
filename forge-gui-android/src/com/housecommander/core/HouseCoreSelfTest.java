@@ -1,7 +1,6 @@
 package com.housecommander.core;
 
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.nio.file.Path;
 
 /** Host-side smoke test: java ... HouseCoreSelfTest <assets-directory>. */
