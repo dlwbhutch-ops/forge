@@ -53,10 +53,10 @@ jobs:
           mvn -B install -Dmaven.test.skip=true
 
       - name: Build HOUSE Android debug APK
-        working-directory: forge-gui-android
         run: |
           export _JAVA_OPTIONS="-Xmx2g"
           mvn -U -B clean verify \
+            -pl forge-gui-android \
             -P android-debug \
             -Dandroid.sdk.path=${ANDROID_SDK_ROOT} \
             -Dandroid.buildToolsVersion=35.0.0 \
