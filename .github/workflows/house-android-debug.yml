@@ -80,11 +80,20 @@ jobs:
             exit "$CODE"
           fi
 
+      - name: Sign HOUSE APK
+        run: |
+          APK="$(find forge-gui-android/target -maxdepth 1 -type f -name '*.apk' ! -name '*debugSigned*' | head -n 1)"
+          echo "APK to sign: $APK"
+          test -n "$APK"
+          java -jar forge-gui-android/tools/uber-apk-signer.jar -a "$APK" --debug
+          echo "===== SIGNED APK ====="
+          find forge-gui-android/target -maxdepth 1 -type f -name '*debugSigned*.apk' -print
+
       - name: Upload HOUSE APK
         uses: actions/upload-artifact@v4
         with:
           name: HOUSE-Commander-Lab-Android
           path: |
-            forge-gui-android/target/*.apk
+            forge-gui-android/target/*debugSigned*.apk
             forge-gui-android/target/assets.zip
           if-no-files-found: error
