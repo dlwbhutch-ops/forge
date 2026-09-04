@@ -54,18 +54,31 @@ jobs:
 
       - name: Build HOUSE Android debug APK
         working-directory: forge-gui-android
+        continue-on-error: true
         run: |
           export _JAVA_OPTIONS="-Xmx2g"
+          set +e
           mvn -s "$GITHUB_WORKSPACE/.mvn/local-settings.xml" -U -B clean verify \
             -P android-debug \
             -Dandroid.sdk.path=${ANDROID_SDK_ROOT} \
             -Dandroid.buildToolsVersion=35.0.0 \
-            -Dmaven.test.skip=true
+            -Dmaven.test.skip=true \
+            2>&1 | tee "$GITHUB_WORKSPACE/house-maven.log"
+          echo "${PIPESTATUS[0]}" > "$GITHUB_WORKSPACE/house-maven-exit.txt"
+          exit 0
 
       - name: Show generated files
         if: always()
         run: |
           find forge-gui-android/target -maxdepth 1 -type f -print || true
+          CODE="$(cat house-maven-exit.txt 2>/dev/null || echo 1)"
+          if [ "$CODE" -ne 0 ]; then
+            echo "===== LAST 80 MAVEN LOG LINES ====="
+            tail -n 80 house-maven.log || true
+            ERR="$(tail -n 80 house-maven.log | tr '\n' ' ' | sed 's/%/%25/g')"
+            echo "::error title=HOUSE Android Maven failure::$ERR"
+            exit "$CODE"
+          fi
 
       - name: Upload HOUSE APK
         uses: actions/upload-artifact@v4
