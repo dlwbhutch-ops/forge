@@ -55,7 +55,7 @@ jobs:
       - name: Build HOUSE Android debug APK
         continue-on-error: true
         run: |
-          export _JAVA_OPTIONS="-Xmx2g"
+          export _JAVA_OPTIONS="-Xmx2g --add-exports=java.base/sun.security.pkcs=ALL-UNNAMED --add-exports=java.base/sun.security.x509=ALL-UNNAMED --add-exports=java.base/sun.security.util=ALL-UNNAMED"
           set +e
           mvn -s "$GITHUB_WORKSPACE/.mvn/local-settings.xml" -U -B clean verify \
             -pl forge-gui-android -am \
