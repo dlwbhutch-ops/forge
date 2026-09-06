@@ -1,0 +1,92 @@
+Commander
+1 Ulalek, Fused Atrocity
+
+Deck
+1 Arcane Signet
+1 Awakening Zone
+1 Azlask, the Swelling Scourge
+1 Birds of Paradise
+1 Bloom Tender
+1 Bountiful Landscape
+1 Breaker of Creation
+1 Capital City
+1 Catacomb Sifter
+1 Chromatic Lantern
+1 Chronicle of Victory
+1 Command Tower
+1 Conduit of Ruin
+1 Contaminated Landscape
+1 Crumbling Vestige
+1 Daily Bugle Building
+1 Drowner of Hope
+1 Drowner of Truth // Drowned Jungle
+1 Echoes of Eternity
+1 Tamiyo's Safekeeping
+1 Dispel
+1 Elvish Mystic
+1 Emrakul, the Promised End
+1 Emrakul, the World Anew
+1 Endbringer
+1 Everflowing Chalice
+1 Farseek
+1 Fellwar Stone
+1 Firdoch Core
+1 Forsaken Monument
+1 Cloud Key
+1 Gathering Stone
+1 Goreclaw, Terror of Qal Sisma
+1 Negate
+1 Herald of Kozilek
+1 Herigast, Erupting Nullkite
+1 Hexing Squelcher
+1 Hidden Grotto
+1 Holdout Settlement
+1 It That Betrays
+1 It That Heralds the End
+1 Kozilek, Butcher of Truth
+1 Kozilek, the Broken Reality
+1 Leyline of the Void
+1 Leyline of Transformation
+1 Lightning Greaves
+1 Morophon, the Boundless
+1 Oblivion Sower
+1 Orochi Leafcaller
+1 Pact of Negation
+1 Path of Ancestry
+1 Rampant Growth
+1 Reflections of Littjara
+1 Reliquary Tower
+1 Fire-Lit Thicket
+1 Runadi, Behemoth Caller
+1 Sakura-Tribe Elder
+1 Sanctum of Ugin
+1 Secluded Courtyard
+1 Selfless Safewright
+1 Silence
+1 Distant Melody
+1 Sire of Stagnation
+1 Snapping Voidcraw
+1 Sol Ring
+1 Somberwald Sage
+1 Spawning Bed
+1 Strionic Resonator
+1 Swamp
+1 Swan Song
+1 Swiftfoot Boots
+1 Temple of the False God
+1 Thought-Knot Seer
+1 Thran Dynamo
+1 Three Visits
+1 Path to Exile
+1 Ulamog, the Ceaseless Hunger
+1 Ulamog, the Defiler
+1 Ulamog, the Infinite Gyre
+1 Urza's Incubator
+1 Verdant Mastery
+1 Warped Landscape
+1 Wastescape Battlemage
+1 Weftwalking
+2 Mountain
+2 Plains
+4 Forest
+7 Wastes
