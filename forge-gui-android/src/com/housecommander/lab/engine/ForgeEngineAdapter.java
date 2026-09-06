@@ -27,8 +27,16 @@ public final class ForgeEngineAdapter {
             Class<?> bridge = Class.forName(BRIDGE_CLASS);
             Method available = bridge.getMethod("isAvailable");
             return Boolean.TRUE.equals(available.invoke(null));
-        } catch (Throwable ignored) {
-            return false;
+        } catch (Throwable t) {
+    Throwable root = t;
+    while (root.getCause() != null && root.getCause() != root) {
+        root = root.getCause();
+    }
+    return "Forge bridge load failed: "
+            + root.getClass().getName()
+            + ": "
+            + String.valueOf(root.getMessage());
+        }
         }
     }
 
