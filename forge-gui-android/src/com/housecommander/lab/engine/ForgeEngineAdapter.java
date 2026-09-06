@@ -23,31 +23,29 @@ public final class ForgeEngineAdapter {
     }
 
     public boolean isAvailable() {
-        try {
-            Class<?> bridge = Class.forName(BRIDGE_CLASS);
-            Method available = bridge.getMethod("isAvailable");
-            return Boolean.TRUE.equals(available.invoke(null));
-        } catch (Throwable t) {
-    Throwable root = t;
-    while (root.getCause() != null && root.getCause() != root) {
-        root = root.getCause();
+    try {
+        Class<?> bridge = Class.forName(BRIDGE_CLASS);
+        Method available = bridge.getMethod("isAvailable");
+        return Boolean.TRUE.equals(available.invoke(null));
+    } catch (Throwable ignored) {
+        return false;
     }
-    return "Forge bridge load failed: "
-            + root.getClass().getName()
-            + ": "
-            + String.valueOf(root.getMessage());
-        }
-        }
     }
-
     public String status() {
-        try {
-            Class<?> bridge = Class.forName(BRIDGE_CLASS);
-            Method version = bridge.getMethod("version");
-            return "Forge bridge linked: " + version.invoke(null);
-        } catch (Throwable ignored) {
-            return "Forge bridge not linked yet — strict mode blocks simulations";
+    try {
+        Class<?> bridge = Class.forName(BRIDGE_CLASS);
+        Method version = bridge.getMethod("version");
+        return "Forge bridge linked: " + version.invoke(null);
+        } catch (Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
         }
+        return "Forge bridge load failed: "
+                + root.getClass().getName()
+                + ": "
+                + String.valueOf(root.getMessage());
+    }
     }
 
     public GameOutcome runCommanderGame(List<DeckSpec> pod, File logFile, int clockSeconds) throws Exception {
