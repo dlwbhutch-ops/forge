@@ -96,7 +96,7 @@
             android:exported="false"/>
         <provider
                 android:name="de.cketti.fileprovider.PublicFileProvider"
-                android:authorities="com.mydomain.publicfileprovider"
+                android:authorities="com.housecommander.labapp.publicfileprovider"
                 android:exported="true">
 
             <meta-data
