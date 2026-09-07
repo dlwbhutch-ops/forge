@@ -21,19 +21,31 @@ public final class ForgeEngineAdapter {
     public ForgeEngineAdapter(Context context) {
         this.context = context.getApplicationContext();
     }
+private Class<?> getBridgeClass() throws Exception {
+    Context forgeContext = context.createPackageContext(
+            "forge.app",
+            Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY
+    );
 
-    public boolean isAvailable() {
+    return Class.forName(
+            BRIDGE_CLASS,
+            true,
+            forgeContext.getClassLoader()
+    );
+}
+
+public boolean isAvailable() {
     try {
-        Class<?> bridge = Class.forName(BRIDGE_CLASS);
+        Class<?> bridge = getBridgeClass();
         Method available = bridge.getMethod("isAvailable");
         return Boolean.TRUE.equals(available.invoke(null));
     } catch (Throwable ignored) {
         return false;
     }
-    }
-    public String status() {
+}
+public String status() {
     try {
-        Class<?> bridge = Class.forName(BRIDGE_CLASS);
+        Class<?> bridge = getBridgeClass();
         Method version = bridge.getMethod("version");
         return "Forge bridge linked: " + version.invoke(null);
         } catch (Throwable t) {
@@ -56,7 +68,7 @@ public final class ForgeEngineAdapter {
         for (int i = 0; i < pod.size(); i++) {
             deckPaths[i] = HouseInstall.deckFile(context, pod.get(i)).getAbsolutePath();
         }
-        Class<?> bridge = Class.forName(BRIDGE_CLASS);
+        Class<?> bridge = getBridgeClass();
         Method run = bridge.getMethod("runCommanderGame", String[].class, String.class, int.class);
         Object winner = run.invoke(null, deckPaths, logFile.getAbsolutePath(), clockSeconds);
         Method version = bridge.getMethod("version");
