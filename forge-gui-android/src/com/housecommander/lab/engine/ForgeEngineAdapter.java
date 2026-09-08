@@ -1,5 +1,5 @@
 package com.housecommander.lab.engine;
-
+// HOUSE bridge uses in-APK ForgeBridge class loading.
 import android.content.Context;
 
 import com.housecommander.core.DeckSpec;
