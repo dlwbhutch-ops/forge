@@ -84,6 +84,46 @@ import java.util.Set;
 public class Main extends AndroidApplication {
     private static final TaggedLogger netLog = Logger.tag("NETWORK");
     private static final long HEAP_HEARTBEAT_MS = 30_000L;
+    private static final long HOUSE_BOOTSTRAP_POLL_MS = 500L;
+
+    // HOUSE Commander Lab bootstrap mode. When HOUSE launches this activity
+    // only to initialize Forge, keep Forge alive long enough to load its real
+    // card database, then return to the HOUSE activity automatically.
+    private boolean houseBootstrapMode;
+    private boolean houseBootstrapReturned;
+    private Handler houseBootstrapHandler;
+
+    private final Runnable houseBootstrapReturnWatch = new Runnable() {
+        @Override public void run() {
+            if (!houseBootstrapMode || houseBootstrapReturned) {
+                return;
+            }
+
+            try {
+                if (com.housecommander.forgebridge.ForgeBridge.isAvailable()) {
+                    houseBootstrapReturned = true;
+                    netLog.info("[house] Forge card database ready; returning to HOUSE Commander Lab");
+
+                    Intent houseIntent = new Intent(
+                            Main.this,
+                            com.housecommander.lab.MainActivity.class);
+                    houseIntent.addFlags(
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(houseIntent);
+                    overridePendingTransition(0, 0);
+                    return;
+                }
+            } catch (Throwable t) {
+                netLog.debug(t, "[house] Forge bridge not ready yet");
+            }
+
+            if (houseBootstrapHandler != null) {
+                houseBootstrapHandler.postDelayed(
+                        this, HOUSE_BOOTSTRAP_POLL_MS);
+            }
+        }
+    };
 
     private AndroidAdapter Gadapter;
     private ArrayList<String> gamepads;
@@ -113,6 +153,25 @@ public class Main extends AndroidApplication {
     // The package name the resources are compiled under (stable across dev/prod).
     // If you ever change the base app package, update this constant once.
     private static final String RES_PKG_FALLBACK = "forge.app";
+
+    private boolean isHouseBootstrapIntent(Intent intent) {
+        return intent != null
+                && intent.getBooleanExtra(
+                        com.housecommander.lab.engine.ForgeDatabaseBootstrap.EXTRA_HOUSE_BOOTSTRAP,
+                        false);
+    }
+
+    private void startHouseBootstrapReturnWatch() {
+        if (!houseBootstrapMode) {
+            return;
+        }
+        if (houseBootstrapHandler == null) {
+            houseBootstrapHandler = new Handler(Looper.getMainLooper());
+        }
+        houseBootstrapReturned = false;
+        houseBootstrapHandler.removeCallbacks(houseBootstrapReturnWatch);
+        houseBootstrapHandler.post(houseBootstrapReturnWatch);
+    }
 
     private int resId(String type, String name) {
         // 1) Try fully-qualified with *runtime* package
@@ -172,6 +231,10 @@ public class Main extends AndroidApplication {
         try {
             super.onResume();
         } catch (Exception ignore) {}
+
+        if (houseBootstrapMode && !houseBootstrapReturned) {
+            startHouseBootstrapReturnWatch();
+        }
     }
 
     @Override
@@ -196,6 +259,13 @@ public class Main extends AndroidApplication {
         heapHeartbeatHandler.postDelayed(heapHeartbeat, HEAP_HEARTBEAT_MS);
 
         super.onCreate(savedInstanceState);
+
+        houseBootstrapMode = isHouseBootstrapIntent(getIntent());
+        if (houseBootstrapMode) {
+            netLog.info("[house] HOUSE requested native Forge/card-database bootstrap");
+            houseBootstrapHandler = new Handler(Looper.getMainLooper());
+        }
+
         try {
             PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
             versionString = pInfo.versionName;
@@ -262,6 +332,25 @@ public class Main extends AndroidApplication {
         os.setRawDescription(getAndroidOSName());
 
         initForge(Gadapter, new HWInfo(device, os, getChipset), permissiongranted, isTabletDevice(getContext()));
+
+        if (houseBootstrapMode) {
+            startHouseBootstrapReturnWatch();
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+
+        if (isHouseBootstrapIntent(intent)) {
+            netLog.info("[house] Received HOUSE bootstrap intent");
+            houseBootstrapMode = true;
+            if (houseBootstrapHandler == null) {
+                houseBootstrapHandler = new Handler(Looper.getMainLooper());
+            }
+            startHouseBootstrapReturnWatch();
+        }
     }
 
     private void crossfade(View contentView, View previousView) {
@@ -392,671 +481,4 @@ public class Main extends AndroidApplication {
 
             getAnimator(ObjectAnimator.ofFloat(forgeLogo, "alpha", 1f, 1f).setDuration(800), ObjectAnimator.ofObject(activeView, "backgroundColor", new ArgbEvaluator(), Color.WHITE, Color.BLACK).setDuration(1600), new AnimatorListenerAdapter() {
                 @Override
-                public void onAnimationEnd(Animator animation) {
-                    super.onAnimationEnd(animation);
-                    handler.postDelayed(() -> {
-                        if (!permissiongranted || exception) {
-                            displayMessage(forgeLogo, adapter, exception, msg, false);
-                        } else if (title.isEmpty() && steps.isEmpty()) {
-                            if (isLandscape) {
-                                Main.this.setRequestedOrientation(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : //Oreo and above has virtual back/menu buttons
-                                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-                            } else {
-                                Main.this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-                            }
-                            crossfade(forgeView, forgeLogo);
-                        } else {
-                            if (sharedPreferences.getBoolean("run_anyway", false)) {
-                                crossfade(forgeView, forgeLogo);
-                                return;
-                            }
-                            TableLayout TL = new TableLayout(getContext());
-                            TL.setBackgroundResource(android.R.color.black);
-                            TableRow messageRow = new TableRow(getContext());
-                            TableRow checkboxRow = new TableRow(getContext());
-                            TableRow buttonRow = new TableRow(getContext());
-                            TextView text = new TextView(getContext());
-                            text.setGravity(Gravity.LEFT);
-                            text.setTypeface(Typeface.SERIF);
-
-                            SpannableString ss1 = new SpannableString(title);
-                            ss1.setSpan(new StyleSpan(Typeface.BOLD), 0, ss1.length(), 0);
-                            text.append(ss1);
-                            text.append(steps + "\n");
-                            messageRow.addView(text);
-                            messageRow.setGravity(Gravity.CENTER);
-
-                            CheckBox checkBox = new CheckBox(getContext());
-                            checkBox.setTypeface(Typeface.SERIF);
-                            checkBox.setGravity(Gravity.TOP);
-                            checkBox.setChecked(false);
-                            checkBox.setPadding(30, 30, 30, 30);
-                            checkBox.setTypeface(Typeface.SERIF);
-                            checkBox.setText(" Don't remind me next time. ");
-                            checkBox.setScaleX(0.9f);
-                            checkBox.setScaleY(0.9f);
-                            checkBox.setOnCheckedChangeListener((buttonView, isChecked) ->
-                                    sharedPreferences.edit().putBoolean("run_anyway", isChecked).apply());
-                            checkboxRow.addView(checkBox);
-                            checkboxRow.setGravity(Gravity.CENTER);
-
-                            int[] colors = {Color.TRANSPARENT, Color.TRANSPARENT};
-                            int[] pressed = {Color.GREEN, Color.GREEN};
-                            GradientDrawable gd = new GradientDrawable(
-                                    GradientDrawable.Orientation.TOP_BOTTOM, colors);
-                            gd.setStroke(3, Color.DKGRAY);
-                            gd.setCornerRadius(100);
-
-                            GradientDrawable gd2 = new GradientDrawable(
-                                    GradientDrawable.Orientation.TOP_BOTTOM, pressed);
-                            gd2.setStroke(3, Color.DKGRAY);
-                            gd2.setCornerRadius(100);
-
-                            Button button = new Button(getContext());
-                            button.setText("Run Forge..");
-                            button.setTypeface(Typeface.DEFAULT_BOLD);
-
-                            StateListDrawable states = new StateListDrawable();
-
-                            states.addState(new int[]{android.R.attr.state_pressed}, gd2);
-                            states.addState(new int[]{}, gd);
-
-                            button.setBackground(states);
-
-                            button.setTextColor(Color.RED);
-                            button.setOnClickListener(v -> {
-                                button.setClickable(false);
-                                crossfade(forgeView, TL);
-                            });
-
-                            buttonRow.addView(button);
-                            buttonRow.setGravity(Gravity.CENTER);
-
-                            TL.addView(messageRow, new TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.WRAP_CONTENT));
-                            TL.addView(checkboxRow, new TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.WRAP_CONTENT));
-                            TL.addView(buttonRow, new TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.WRAP_CONTENT));
-                            TL.setGravity(Gravity.CENTER);
-                            crossfade(TL, forgeLogo);
-                        }
-                    }, 600);
-                }
-            }).start();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private AnimatorSet getAnimator(Animator play, Animator with, AnimatorListenerAdapter adapter) {
-        AnimatorSet animatorSet = new AnimatorSet();
-        if (with != null) {
-            animatorSet.playSequentially(play, with);
-        } else
-            animatorSet.play(play);
-        animatorSet.addListener(adapter);
-        return animatorSet;
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (Gadapter != null)
-            Gadapter.exit();
-
-        super.onBackPressed();
-    }
-
-    private boolean checkPermission() {
-        int pid = android.os.Process.myPid();
-        int uid = android.os.Process.myUid();
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (getBaseContext().checkPermission(android.Manifest.permission.READ_MEDIA_IMAGES, pid, uid) == PackageManager.PERMISSION_GRANTED)
-                    if (getBaseContext().checkPermission(android.Manifest.permission.READ_MEDIA_AUDIO, pid, uid) == PackageManager.PERMISSION_GRANTED)
-                        return getBaseContext().checkPermission(android.Manifest.permission.READ_MEDIA_VIDEO, pid, uid) == PackageManager.PERMISSION_GRANTED;
-                return false;
-            } else {
-                return getBaseContext().checkPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE, pid, uid) == PackageManager.PERMISSION_GRANTED;
-            }
-        } catch (NullPointerException e) {
-            return false;
-        }
-    }
-
-    private void initForge(AndroidAdapter adapter, HWInfo hwInfo, boolean permissiongranted, boolean isTabletDevice) {
-        int totalRAM = hwInfo.getTotalRam();
-
-        AndroidApplicationConfiguration config = new AndroidApplicationConfiguration();
-        config.useAccelerometer = false;
-        config.useCompass = false;
-        config.useGyroscope = false;
-        config.useRotationVectorSensor = false;
-        config.useImmersiveMode = false;
-        config.nativeLoader = () -> ReLinker.loadLibrary(getContext(), "gdx");
-
-        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-            String message = getDeviceName() + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB" + "\n" + "LibGDX " + Version.VERSION + "\n" + "Can't access external storage";
-            Main.this.setRequestedOrientation(Main.this.getResources().getConfiguration().orientation);
-            loadGame(hwInfo, "", "", false, adapter, permissiongranted, isTabletDevice, config, true, message);
-            return;
-        }
-        ASSETS_DIR = Build.VERSION.SDK_INT > Build.VERSION_CODES.Q ? getContext().getObbDir() + "/Forge/" : Environment.getExternalStorageDirectory() + "/Forge/";
-        if (!FileUtil.ensureDirectoryExists(ASSETS_DIR)) {
-            String message = getDeviceName() + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB" + "\n" + "LibGDX " + Version.VERSION + "\n" + "Can't access external storage\nPath: " + ASSETS_DIR;
-            Main.this.setRequestedOrientation(Main.this.getResources().getConfiguration().orientation);
-            loadGame(hwInfo, "", "", false, adapter, permissiongranted, isTabletDevice, config, true, message);
-            return;
-        }
-        //ensure .nomedia file exists in Forge directory so its images
-        //and other media files don't appear in Gallery or other apps
-        String noMediaFile = ASSETS_DIR + ".nomedia";
-        if (!FileUtil.doesFileExist(noMediaFile)) {
-            try {
-                FileUtil.writeFile(noMediaFile, "");
-            } catch (Exception e) {
-                String message = getDeviceName() + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB" + "\n" + "LibGDX " + Version.VERSION + "\n" + "Can't read/write to storage";
-                Main.this.setRequestedOrientation(Main.this.getResources().getConfiguration().orientation);
-                loadGame(hwInfo, "", "", false, adapter, permissiongranted, isTabletDevice, config, true, message);
-                return;
-            }
-        }
-        //enforce orientation based on whether device is a tablet and user preference
-        adapter.switchOrientationFile = ASSETS_DIR + "switch_orientation.ini";
-        boolean landscapeMode = adapter.isTablet == !FileUtil.doesFileExist(adapter.switchOrientationFile);
-
-        String info = totalRAM < 3500 || Build.VERSION.SDK_INT < Build.VERSION_CODES.R ? "Device Specification Check\n" + getDeviceName()
-                + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB\n\nRecommended API:" : "";
-        // Even though Forge runs on Android 8 as minimum, just show indicator that Android 11 is recommended
-        String lowV = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ? "\nAPI: Android 11 or higher" : "";
-        // also show minimum Device RAM
-        String lowM = totalRAM < 3500 ? "\nRAM: 4GB RAM or higher" : "";
-        if (landscapeMode && Build.VERSION.SDK_INT > Build.VERSION_CODES.Q) { //Android 11 onwards
-            Main.this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-        }
-        loadGame(hwInfo, info, lowV + lowM, landscapeMode, adapter, permissiongranted, isTabletDevice, config, false, "");
-    }
-
-    @Override
-    protected void onDestroy() {
-        netLog.info("[lifecycle] onDestroy");
-        if (heapHeartbeatHandler != null) {
-            heapHeartbeatHandler.removeCallbacks(heapHeartbeat);
-            heapHeartbeatHandler = null;
-        }
-        if (forgeApp != null)
-            forgeApp.dispose();
-        super.onDestroy();
-        //ensure app doesn't stick around
-        //ActivityManager am = (ActivityManager)getSystemService(Activity.ACTIVITY_SERVICE);
-        //am.killBackgroundProcesses(getApplicationContext().getPackageName());
-    }
-
-    @Override
-    protected void onStop() {
-        netLog.info("[lifecycle] onStop");
-        super.onStop();
-    }
-
-    @Override
-    public void onLowMemory() {
-        netLog.warn("[lifecycle] onLowMemory");
-        super.onLowMemory();
-    }
-
-    @Override
-    public void onTrimMemory(int level) {
-        netLog.warn("[lifecycle] onTrimMemory level={}", level);
-        super.onTrimMemory(level);
-    }
-
-    @Override
-    protected void onPause() {
-        netLog.info("[lifecycle] onPause");
-        super.onPause();
-
-        /*ForgePreferences prefs = FModel.getPreferences();
-        boolean minimizeonScreenLock = prefs != null && prefs.getPrefBoolean(ForgePreferences.FPref.UI_ANDROID_MINIMIZE_ON_SCRLOCK);
-
-        if (minimizeonScreenLock) {
-            // If the screen is off then the device has been locked
-            PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-            boolean isScreenOn = powerManager.isScreenOn();
-            if (!isScreenOn) {
-                this.moveTaskToBack(true);
-                // Minimize the app to the background...
-            }
-        }*/
-    }
-
-    //special clipboard that words on Android
-    private class AndroidClipboard implements com.badlogic.gdx.utils.Clipboard {
-        private final ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-
-        @Override
-        public boolean hasContents() {
-            ClipData clipData = cm.getPrimaryClip();
-            if (clipData == null)
-                return false;
-            if (clipData.getItemCount() > 0) {
-                try {
-                    return clipData.getItemAt(0).coerceToText(getContext()).length() > 0;
-                } catch (Exception ex) {
-                    return false;
-                }
-            }
-            return false;
-        }
-
-        @Override
-        public String getContents() {
-            ClipData clipData = cm.getPrimaryClip();
-            if (clipData == null)
-                return "";
-            if (clipData.getItemCount() > 0) {
-                try {
-                    String text = clipData.getItemAt(0).coerceToText(getContext()).toString();
-                    return text;//Normalizer.normalize(text, Normalizer.Form.NFD);
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
-            }
-            return "";
-        }
-
-        @Override
-        public void setContents(String contents0) {
-            try {
-                cm.setPrimaryClip(ClipData.newPlainText("Forge", contents0));
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
-        }
-    }
-
-    private class AndroidAdapter implements IDeviceAdapter {
-        private final boolean isTablet;
-        private final ConnectivityManager connManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        private String switchOrientationFile;
-        private final Context context;
-        private boolean connected;
-
-        private AndroidAdapter(Context context) {
-            this.context = context;
-            isTablet = (context.getResources().getConfiguration().screenLayout
-                    & Configuration.SCREENLAYOUT_SIZE_MASK)
-                    >= Configuration.SCREENLAYOUT_SIZE_LARGE;
-            try {
-                if (connManager != null) {
-                    connManager.registerDefaultNetworkCallback(
-                            new ConnectivityManager.NetworkCallback() {
-                                @Override
-                                public void onAvailable(Network network) {
-                                    connected = true;
-                                }
-
-                                @Override
-                                public void onLost(Network network) {
-                                    connected = false;
-                                }
-                            }
-                    );
-                }
-            } catch (Exception e) {
-                connected = false;
-            }
-        }
-
-        private boolean hasInternet() {
-            return isNetworkConnected(false);
-        }
-
-        private boolean hasWiFiInternet() {
-            return isNetworkConnected(true);
-        }
-
-        private boolean isNetworkConnected(boolean wifiOnly) {
-            boolean result = false;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (connManager != null) {
-                    NetworkCapabilities capabilities = connManager.getNetworkCapabilities(connManager.getActiveNetwork());
-                    if (capabilities != null) {
-                        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-                            result = connected;
-                        } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
-                            result = connected && !wifiOnly;
-                        }
-                    }
-                }
-            } else {
-                if (connManager != null) {
-                    NetworkInfo activeNetwork = connManager.getActiveNetworkInfo();
-                    if (activeNetwork != null) {
-                        // connected to the internet
-                        if (activeNetwork.getType() == ConnectivityManager.TYPE_WIFI || activeNetwork.getType() == ConnectivityManager.TYPE_ETHERNET) {
-                            result = true;
-                        } else if (activeNetwork.getType() == ConnectivityManager.TYPE_MOBILE) {
-                            result = !wifiOnly;
-                        }
-                    }
-                }
-            }
-            return result;
-        }
-
-        @Override
-        public DefaultUpnpServiceConfiguration getUpnpPlatformService() {
-            return new AndroidUpnpServiceConfiguration();
-        }
-
-        @Override
-        public boolean needFileAccess() {
-            return needExternalFileAccess();
-        }
-
-        @Override
-        public void requestFileAcces() {
-            /* This is needed for Android 11 and upwards to have access on external storage (direct file path)
-            ie adventure mode -> data -> restore. Though it's not fast like the app-specific storage...*/
-            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-            Uri uri = Uri.fromParts("package", getPackageName(), null);
-            intent.setData(uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-        }
-
-        @Override
-        public boolean isConnectedToInternet() {
-            //if it can't determine Internet connection within two seconds, assume not connected
-            return Boolean.TRUE.equals(ThreadUtil.executeWithTimeout(this::hasInternet, 2000));
-        }
-
-        @Override
-        public boolean isConnectedToWifi() {
-            //if it can't determine Internet connection within two seconds, assume not connected
-            return Boolean.TRUE.equals(ThreadUtil.executeWithTimeout(this::hasWiFiInternet, 2000));
-        }
-
-        @Override
-        public String getDownloadsDir() {
-            return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + "/";
-        }
-
-        @Override
-        public String getVersionString() {
-            return versionString;
-        }
-
-        @Override
-        public String getLatestChanges(String commitsAtom, Date buildDateOriginal, Date maxDate) {
-            return new GitLogs().getLatest(commitsAtom, buildDateOriginal, maxDate);
-        }
-
-        @Override
-        public String getReleaseTag(String releaseAtom) {
-            return new GitLogs().getLatestReleaseTag(releaseAtom);
-        }
-
-        @Override
-        public boolean openFile(String filename) {
-            try {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                    Intent intent = new Intent(Intent.ACTION_VIEW);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); //ensure this task isn't linked to this application
-                    Uri uri = Uri.fromFile(new File(filename));
-                    String type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-                            MimeTypeMap.getFileExtensionFromUrl(uri.toString()));
-                    intent.setDataAndType(uri, type);
-                    startActivity(intent);
-                    return true;
-                } else {
-                    Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-                    intent.setData(PublicFileProvider.getUriForFile(
-        getContext(),
-        getContext().getPackageName() + ".publicfileprovider",
-        new File(filename)));
-                    intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(intent);
-                    return true;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            return false;
-        }
-
-        @Override
-        public void restart() {
-            triggerRebirth();
-        }
-
-        @Override
-        public void exit() {
-            Gdx.app.exit();
-            finish();
-        }
-
-        @Override
-        public void closeSplashScreen() {
-            //only for desktop mobile-dev
-        }
-
-        @Override
-        public boolean isTablet() {
-            return isTablet;
-        }
-
-        @Override
-        public void setLandscapeMode(boolean landscapeMode) {
-            //create file to indicate that portrait mode should be used for tablet or landscape should be used for phone
-            if (landscapeMode != isTablet) {
-                FileUtil.writeFile(switchOrientationFile, "1");
-            } else {
-                FileUtil.deleteFile(switchOrientationFile);
-            }
-        }
-
-        @Override
-        public void preventSystemSleep(final boolean preventSleep) {
-            // Setting getWindow() Flags needs to run on UI thread.
-            // Should fix android.view.ViewRoot$CalledFromWrongThreadException:
-            // Only the original thread that created a view hierarchy can touch its views.
-            preventSleep(preventSleep);
-        }
-
-        @Override
-        public void convertToJPEG(InputStream input, OutputStream output) {
-            Bitmap bmp = BitmapFactory.decodeStream(input);
-            bmp.compress(Bitmap.CompressFormat.JPEG, 100, output);
-        }
-
-        @Override
-        public void convertToPNG(InputStream input, OutputStream output) {
-            Bitmap bmp = BitmapFactory.decodeStream(input);
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, output);
-        }
-
-        @Override
-        public Pair<Integer, Integer> getRealScreenSize(boolean real) {
-            //app size
-            WindowManager windowManager = (WindowManager) getApplicationContext().getSystemService(Context.WINDOW_SERVICE);
-            Display display = windowManager.getDefaultDisplay();
-            Point size = new Point();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-                // Seems it doesn't compile if using 4.1.1.4 since it's missing this method
-                if (real)
-                    display.getRealSize(size);
-                else
-                    display.getSize(size);
-                //remove this line below and use the method above if using Android libs higher than 4.1.1.4
-                //return Pair.of(Gdx.graphics.getWidth(), Gdx.graphics.getHeight()); // this method don't take account the soft navigation bars taken in rendered screen
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
-                try {
-                    size.x = (Integer) Display.class.getMethod("getRawWidth").invoke(display);
-                    size.y = (Integer) Display.class.getMethod("getRawHeight").invoke(display);
-                } catch (Exception e) {
-                    size.x = Gdx.graphics.getWidth();
-                    size.y = Gdx.graphics.getHeight();
-                }
-            } else {
-                size.x = Gdx.graphics.getWidth();
-                size.y = Gdx.graphics.getHeight();
-            }
-            return Pair.of(size.x, size.y);
-        }
-
-        @Override
-        public ArrayList<String> getGamepads() {
-            return gamepads;
-        }
-
-        //Commonly supported Android audio formats, taken from https://developer.android.com/media/platform/supported-formats#audio-formats
-        Set<String> ANDROID_SUPPORTED_AUDIO_TYPES = Set.of(".wav", ".mp3", ".ogg", ".mp4", ".m4a", ".aac", ".mkv");
-        @Override
-        public boolean isSupportedAudioFormat(File file) {
-            //At some point it's worth considering switching this out for a more elaborate method
-            //that checks the mime type against the MediaCodecList. Might also throw in some logic
-            //that distinguishes between sound effects and music and disallows any SFX that are over
-            //1 MB in size, since the Android SFX implementation fully loads SFX files into RAM.
-            String path = file.getPath().toLowerCase();
-            return ANDROID_SUPPORTED_AUDIO_TYPES.stream().anyMatch(path::endsWith);
-        }
-    }
-
-    private void preventSleep(boolean preventSleep) {
-        runOnUiThread(() -> {
-            if (preventSleep) {
-                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            } else {
-                if (!isMIUI)
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            }
-        });
-    }
-
-    private void triggerRebirth() {
-        try {
-            Context context = getApplicationContext();
-            PackageManager packageManager = context.getPackageManager();
-            Intent intent = packageManager.getLaunchIntentForPackage(context.getPackageName());
-            ComponentName componentName = intent.getComponent();
-            Intent mainIntent = Intent.makeRestartActivityTask(componentName);
-            // Required for API 34 and later
-            // Ref: https://developer.android.com/about/versions/14/behavior-changes-14#safer-intents
-            mainIntent.setPackage(context.getPackageName());
-            context.startActivity(mainIntent);
-            Runtime.getRuntime().exit(0);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private ArrayList<String> getGameControllers() {
-        ArrayList<String> gameControllerDeviceIds = new ArrayList<>();
-        int[] deviceIds = InputDevice.getDeviceIds();
-        for (int deviceId : deviceIds) {
-            InputDevice dev = InputDevice.getDevice(deviceId);
-            int sources = dev.getSources();
-            String devNameId = dev.getName() + "[" + deviceId + "]";
-
-            // Verify that the device has gamepad buttons, control sticks, or both.
-            if (((sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD)
-                    || ((sources & InputDevice.SOURCE_JOYSTICK)
-                    == InputDevice.SOURCE_JOYSTICK)) {
-                // This device is a game controller. Store its device ID.
-                if (!gameControllerDeviceIds.contains(devNameId)) {
-                    gameControllerDeviceIds.add(devNameId);
-                }
-            }
-        }
-        return gameControllerDeviceIds;
-    }
-
-    public final String getAndroidOSName() {
-        final String codename;
-        switch (Build.VERSION.SDK_INT) {
-            case Build.VERSION_CODES.O:
-                codename = "Android 8 (Oreo)";
-                break;
-            case Build.VERSION_CODES.O_MR1:
-                codename = "Android 8.1 (Oreo)";
-                break;
-            case Build.VERSION_CODES.P:
-                codename = "Android 9 (Pie)";
-                break;
-            case Build.VERSION_CODES.Q:
-                codename = "Android 10 (Quince Tart)";
-                break;
-            case Build.VERSION_CODES.R:
-                codename = "Android 11 (Red Velvet)";
-                break;
-            case Build.VERSION_CODES.S:
-                codename = "Android 12 (Snow Cone)";
-                break;
-            case Build.VERSION_CODES.S_V2:
-                codename = "Android 12L (Snow Cone V2)";
-                break;
-            case Build.VERSION_CODES.TIRAMISU:
-                codename = "Android 13 (Tiramisu)";
-                break;
-            case Build.VERSION_CODES.UPSIDE_DOWN_CAKE:
-                codename = "Android 14 (Upside Down Cake)";
-                break;
-            case Build.VERSION_CODES.VANILLA_ICE_CREAM:
-                codename = "Android 15 (Vanilla Ice Cream)";
-                break;
-            case 36:
-                codename = "Android 16 (Baklava)";
-                break;
-            default:
-                codename = "Android " + Build.VERSION.SDK_INT;
-                break;
-        }
-        return codename;
-    }
-
-    public String getCpuName() {
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R)
-            return Build.SOC_MANUFACTURER + " " + Build.SOC_MODEL;
-        try {
-            FileReader fr = new FileReader("/proc/cpuinfo");
-            BufferedReader br = new BufferedReader(fr);
-            String line;
-            String cpuName = null;
-
-            while ((line = br.readLine()) != null) {
-                if (line.contains("Processor") || line.contains("model name")) {
-                    // Extract the part after the colon and trim whitespace
-                    String[] parts = line.split(":", 2);
-                    if (parts.length > 1) {
-                        cpuName = parts[1].trim();
-                        break; // Found the CPU name, no need to read further
-                    }
-                }
-            }
-            br.close();
-            return capitalize(cpuName);
-        } catch (IOException e) {
-            return Build.UNKNOWN;
-        }
-    }
-
-    public String getDeviceName() {
-        String manufacturer = Build.MANUFACTURER;
-        String model = Build.BRAND + " - " + Build.MODEL;
-        if (model.toLowerCase().startsWith(manufacturer.toLowerCase())) {
-            return capitalize(model);
-        } else {
-            return capitalize(manufacturer) + " " + model;
-        }
-    }
-
-    private String capitalize(String s) {
-        if (s == null || s.length() == 0) {
-            return "";
-        }
-        char first = s.charAt(0);
-        if (Character.isUpperCase(first)) {
-            return s;
-        } else {
-            return Character.toUpperCase(first) + s.substring(1);
-        }
-    }
-}
+                public void onAn
