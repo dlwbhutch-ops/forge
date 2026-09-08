@@ -19,6 +19,7 @@ import android.widget.TextView;
 
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.HousePackageLoader;
+import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
 import com.housecommander.lab.state.ResultsWriter;
@@ -56,10 +57,23 @@ public final class MainActivity extends Activity {
         }
         setContentView(buildUi());
         runPreflight();
+
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                ForgeEngineAdapter engine =
+                        new ForgeEngineAdapter(MainActivity.this);
+
+                if (!engine.isAvailable()) {
+                    engineStatus.setText("Loading Forge card database…");
+                    ForgeDatabaseBootstrap.ensureReady(MainActivity.this);
+                }
+            }
+        }, 300);
     }
 
     @Override protected void onResume() {
         super.onResume();
+        runPreflight();
         handler.post(refresh);
     }
 
