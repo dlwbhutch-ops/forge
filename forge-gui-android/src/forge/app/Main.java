@@ -82,6 +82,9 @@ import java.util.Date;
 import java.util.Set;
 
 public class Main extends AndroidApplication {
+    public static final String EXTRA_HOUSE_BOOTSTRAP =
+            "com.housecommander.lab.extra.FORGE_BOOTSTRAP";
+
     private static final TaggedLogger netLog = Logger.tag("NETWORK");
     private static final long HEAP_HEARTBEAT_MS = 30_000L;
     private static final long HOUSE_BOOTSTRAP_POLL_MS = 500L;
@@ -100,7 +103,8 @@ public class Main extends AndroidApplication {
             }
 
             try {
-                if (com.housecommander.forgebridge.ForgeBridge.isAvailable()) {
+                if (Forge.afterDBloaded
+                        && com.housecommander.forgebridge.ForgeBridge.isAvailable()) {
                     houseBootstrapReturned = true;
                     netLog.info("[house] Forge card database ready; returning to HOUSE Commander Lab");
 
@@ -156,9 +160,7 @@ public class Main extends AndroidApplication {
 
     private boolean isHouseBootstrapIntent(Intent intent) {
         return intent != null
-                && intent.getBooleanExtra(
-                        com.housecommander.lab.engine.ForgeDatabaseBootstrap.EXTRA_HOUSE_BOOTSTRAP,
-                        false);
+                && intent.getBooleanExtra(EXTRA_HOUSE_BOOTSTRAP, false);
     }
 
     private void startHouseBootstrapReturnWatch() {
