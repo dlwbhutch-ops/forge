@@ -11,33 +11,13 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 /**
- * Strict in-APK bridge between HOUSE Commander Lab and the real Forge engine.
+ * Strict in-APK bridge between HOUSE Commander Lab and Forge.
  *
- * IMPORTANT:
- * ForgeBridge is compiled into the SAME APK as HOUSE Commander Lab.
- * Therefore this class must NEVER try to load a separate Android package
- * named "forge.app".
- *
- * The runtime Android application package may be:
- *
- *     com.housecommander.labapp
- *
- * while Forge's Java classes still live under packages such as:
- *
- *     forge.app.Main
- *     forge.model.FModel
- *     com.housecommander.forgebridge.ForgeBridge
- *
- * Android application package names and Java package names are not the
- * same thing. The bridge must use this APK's own ClassLoader.
- *
- * Integrity rule:
- * This adapter never invents game results. If Forge is unavailable,
- * uninitialized, throws, times out, or returns no winner, the caller gets
- * a real error.
+ * No substitute simulator and no guessed result is ever used. Any bridge,
+ * database, deck, engine, timeout, or winner-validation failure is surfaced to
+ * the tournament service as a real error.
  */
 public final class ForgeEngineAdapter {
-
     private static final String BRIDGE_CLASS =
             "com.housecommander.forgebridge.ForgeBridge";
 
@@ -47,97 +27,60 @@ public final class ForgeEngineAdapter {
         if (context == null) {
             throw new IllegalArgumentException("Context must not be null");
         }
-
-        Context appContext = context.getApplicationContext();
-        this.context = appContext != null ? appContext : context;
+        Context app = context.getApplicationContext();
+        this.context = app != null ? app : context;
     }
 
-    /**
-     * Load ForgeBridge directly from THIS APK.
-     *
-     * Do not use createPackageContext("forge.app", ...).
-     * There is no separate installed application with that package name in
-     * the HOUSE build.
-     */
     private Class<?> getBridgeClass() throws ClassNotFoundException {
         ClassLoader loader = context.getClassLoader();
-
         if (loader == null) {
             loader = ForgeEngineAdapter.class.getClassLoader();
         }
-
-        return Class.forName(
-                BRIDGE_CLASS,
-                true,
-                loader
-        );
+        return Class.forName(BRIDGE_CLASS, true, loader);
     }
 
-    /**
-     * Returns true only when the real Forge card database has completed
-     * initialization.
-     */
     public boolean isAvailable() {
         try {
             Class<?> bridge = getBridgeClass();
-
-            Method available =
-                    bridge.getMethod("isAvailable");
-
-            Object result =
-                    available.invoke(null);
-
-            return Boolean.TRUE.equals(result);
-
+            Method available = bridge.getMethod("isAvailable");
+            return Boolean.TRUE.equals(available.invoke(null));
         } catch (Throwable ignored) {
             return false;
         }
     }
 
     /**
-     * Human-readable strict preflight status.
-     *
-     * Distinguishes:
-     *   1. Bridge class missing
-     *   2. Bridge present but Forge DB still loading
-     *   3. Bridge + Forge DB ready
+     * Human-readable preflight/health status from the bridge itself.
      */
     public String status() {
         final String runtimePackage = context.getPackageName();
-
         try {
             Class<?> bridge = getBridgeClass();
+            Method versionMethod = bridge.getMethod("version");
+            Method availableMethod = bridge.getMethod("isAvailable");
 
-            Method versionMethod =
-                    bridge.getMethod("version");
+            Object version = versionMethod.invoke(null);
+            Object available = availableMethod.invoke(null);
 
-            Method availableMethod =
-                    bridge.getMethod("isAvailable");
-
-            Object version =
-                    versionMethod.invoke(null);
-
-            Object available =
-                    availableMethod.invoke(null);
-
-            if (Boolean.TRUE.equals(available)) {
-                return "Forge bridge READY"
-                        + " • "
-                        + String.valueOf(version)
-                        + " • package="
-                        + runtimePackage;
+            String bridgeStatus;
+            try {
+                Method statusMethod = bridge.getMethod("status");
+                Object value = statusMethod.invoke(null);
+                bridgeStatus = value == null ? "" : value.toString().trim();
+            } catch (NoSuchMethodException legacyBridge) {
+                bridgeStatus = Boolean.TRUE.equals(available)
+                        ? "READY"
+                        : "Forge card database loading";
             }
 
-            return "Forge bridge linked"
-                    + " • Forge card database loading"
+            return "Forge bridge "
+                    + bridgeStatus
                     + " • "
                     + String.valueOf(version)
                     + " • package="
                     + runtimePackage;
-
         } catch (Throwable t) {
             Throwable root = rootCause(t);
-
             return "Forge bridge load failed"
                     + " • package="
                     + runtimePackage
@@ -149,43 +92,21 @@ public final class ForgeEngineAdapter {
     }
 
     /**
-     * Execute exactly one real Forge multiplayer Commander game.
+     * Execute one literal Forge multiplayer Commander game.
      *
-     * @param pod          physical HOUSE deck specifications
-     * @param logFile      destination for Forge's literal game log
-     * @param clockSeconds hard timeout for the game
+     * @param pod                 HOUSE deck specifications for the pod
+     * @param logFile             literal Forge audit log destination
+     * @param hardTimeoutSeconds  absolute wall-clock ceiling for one game
+     * @param stallTimeoutSeconds maximum time with no observable game progress
      */
     public GameOutcome runCommanderGame(
             List<DeckSpec> pod,
             File logFile,
-            int clockSeconds
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds
     ) throws Exception {
+        validateArguments(pod, logFile, hardTimeoutSeconds, stallTimeoutSeconds);
 
-        if (pod == null || pod.size() < 2) {
-            throw new IllegalArgumentException(
-                    "At least two Commander decks are required"
-            );
-        }
-
-        if (logFile == null) {
-            throw new IllegalArgumentException(
-                    "Forge log file must not be null"
-            );
-        }
-
-        if (clockSeconds < 1) {
-            throw new IllegalArgumentException(
-                    "Forge game timeout must be at least 1 second"
-            );
-        }
-
-        /*
-         * Strict gate.
-         *
-         * ForgeBridge.isAvailable() ultimately verifies FModel's real
-         * Magic database. If it is false, absolutely no substitute
-         * simulation is allowed.
-         */
         if (!isAvailable()) {
             throw new IllegalStateException(
                     "STRICT GATE: Forge engine/card database is not ready. "
@@ -194,100 +115,78 @@ public final class ForgeEngineAdapter {
             );
         }
 
-        String[] deckPaths =
-                new String[pod.size()];
-
+        String[] deckPaths = new String[pod.size()];
         for (int i = 0; i < pod.size(); i++) {
             DeckSpec spec = pod.get(i);
-
             if (spec == null) {
-                throw new IllegalArgumentException(
-                        "Pod contains a null deck at index " + i
-                );
+                throw new IllegalArgumentException("Pod contains a null deck at index " + i);
             }
 
-            File deckFile =
-                    HouseInstall.deckFile(context, spec);
-
+            File deckFile = HouseInstall.deckFile(context, spec);
             if (deckFile == null || !deckFile.isFile()) {
                 throw new IllegalStateException(
                         "Physical Forge deck file is missing for pod index "
                                 + i
                                 + ": "
-                                + (deckFile == null
-                                ? "<null>"
-                                : deckFile.getAbsolutePath())
+                                + (deckFile == null ? "<null>" : deckFile.getAbsolutePath())
                 );
             }
-
-            deckPaths[i] =
-                    deckFile.getAbsolutePath();
+            if (!deckFile.canRead()) {
+                throw new IllegalStateException(
+                        "Physical Forge deck file is not readable: " + deckFile.getAbsolutePath()
+                );
+            }
+            deckPaths[i] = deckFile.getAbsolutePath();
         }
 
-        Class<?> bridge =
-                getBridgeClass();
+        File parent = logFile.getParentFile();
+        if (parent != null
+                && !parent.exists()
+                && !parent.mkdirs()
+                && !parent.isDirectory()) {
+            throw new IllegalStateException(
+                    "Could not create Forge log directory: " + parent.getAbsolutePath()
+            );
+        }
 
-        Method run =
-                bridge.getMethod(
-                        "runCommanderGame",
-                        String[].class,
-                        String.class,
-                        int.class
-                );
+        Class<?> bridge = getBridgeClass();
+        Method run = bridge.getMethod(
+                "runCommanderGame",
+                String[].class,
+                String.class,
+                int.class,
+                int.class
+        );
 
         Object winner;
-
         try {
-            /*
-             * String[].class is an Object when passed through reflection.
-             * The cast prevents Java from treating the deck array as
-             * multiple reflection arguments.
-             */
             winner = run.invoke(
                     null,
                     (Object) deckPaths,
                     logFile.getAbsolutePath(),
-                    clockSeconds
+                    hardTimeoutSeconds,
+                    stallTimeoutSeconds
             );
-
         } catch (InvocationTargetException e) {
-            /*
-             * Preserve the REAL Forge failure instead of hiding it inside
-             * reflection's InvocationTargetException.
-             */
-            Throwable cause =
-                    e.getCause() != null
-                            ? e.getCause()
-                            : e;
-
-            if (cause instanceof Exception) {
-                throw (Exception) cause;
-            }
-
-            if (cause instanceof Error) {
-                throw (Error) cause;
-            }
-
-            throw new RuntimeException(cause);
+            rethrowInvocationCause(e);
+            throw new AssertionError("unreachable");
         }
 
-        String winnerName =
-                winner == null
-                        ? ""
-                        : winner.toString().trim();
-
+        String winnerName = winner == null ? "" : winner.toString().trim();
         if (winnerName.isEmpty()) {
             throw new IllegalStateException(
-                    "STRICT GATE: Forge returned no verified winner. "
-                            + "HOUSE will not guess a result."
+                    "STRICT GATE: Forge returned no verified winner. HOUSE will not guess a result."
             );
         }
 
-        Method version =
-                bridge.getMethod("version");
-
-        Object forgeVersion =
-                version.invoke(null);
+        Object forgeVersion;
+        try {
+            Method version = bridge.getMethod("version");
+            forgeVersion = version.invoke(null);
+        } catch (InvocationTargetException e) {
+            rethrowInvocationCause(e);
+            throw new AssertionError("unreachable");
+        }
 
         return new GameOutcome(
                 winnerName,
@@ -296,20 +195,65 @@ public final class ForgeEngineAdapter {
         );
     }
 
-    private static Throwable rootCause(Throwable t) {
-        if (t == null) {
-            return new IllegalStateException(
-                    "Unknown Forge bridge error"
+    /**
+     * Compatibility shim for any caller still compiled against bridge 0.6.
+     * New HOUSE code should always use the four-argument overload.
+     */
+    @Deprecated
+    public GameOutcome runCommanderGame(
+            List<DeckSpec> pod,
+            File logFile,
+            int clockSeconds
+    ) throws Exception {
+        int hard = Math.max(1, clockSeconds);
+        int stall = Math.min(hard, 180);
+        return runCommanderGame(pod, logFile, hard, stall);
+    }
+
+    private static void validateArguments(
+            List<DeckSpec> pod,
+            File logFile,
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds
+    ) {
+        if (pod == null || pod.size() < 2) {
+            throw new IllegalArgumentException("At least two Commander decks are required");
+        }
+        if (logFile == null) {
+            throw new IllegalArgumentException("Forge log file must not be null");
+        }
+        if (hardTimeoutSeconds < 1) {
+            throw new IllegalArgumentException("Hard game timeout must be at least 1 second");
+        }
+        if (stallTimeoutSeconds < 1) {
+            throw new IllegalArgumentException("Stall timeout must be at least 1 second");
+        }
+        if (stallTimeoutSeconds > hardTimeoutSeconds) {
+            throw new IllegalArgumentException(
+                    "Stall timeout must not exceed the hard game timeout"
             );
         }
+    }
 
+    private static void rethrowInvocationCause(InvocationTargetException e) throws Exception {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        if (cause instanceof Exception) {
+            throw (Exception) cause;
+        }
+        if (cause instanceof Error) {
+            throw (Error) cause;
+        }
+        throw new RuntimeException(cause);
+    }
+
+    private static Throwable rootCause(Throwable t) {
+        if (t == null) {
+            return new IllegalStateException("Unknown Forge bridge error");
+        }
         Throwable root = t;
-
-        while (root.getCause() != null
-                && root.getCause() != root) {
+        while (root.getCause() != null && root.getCause() != root) {
             root = root.getCause();
         }
-
         return root;
     }
 
@@ -317,18 +261,10 @@ public final class ForgeEngineAdapter {
         if (t == null) {
             return "unknown error";
         }
-
-        String message =
-                t.getMessage();
-
-        if (message == null
-                || message.trim().isEmpty()) {
+        String message = t.getMessage();
+        if (message == null || message.trim().isEmpty()) {
             return t.getClass().getSimpleName();
         }
-
-        return message
-                .replace('\n', ' ')
-                .replace('\r', ' ')
-                .trim();
+        return message.replace('\n', ' ').replace('\r', ' ').trim();
     }
-} 
+}
