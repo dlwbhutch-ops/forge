@@ -20,6 +20,7 @@ import android.widget.TextView;
 
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.HousePackageLoader;
+import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
 import com.housecommander.lab.state.ResultsWriter;
@@ -47,11 +48,13 @@ public final class MainActivity extends Activity {
 
     private boolean preflightPass;
     private boolean engineAvailable;
+    private String forgeStartupError;
     private int podCount = DEFAULT_POD_COUNT;
 
     private final Runnable refresh = new Runnable() {
         @Override
         public void run() {
+            refreshEngineStatus();
             updateRunState();
             handler.postDelayed(this, 1000L);
         }
@@ -239,10 +242,28 @@ public final class MainActivity extends Activity {
             preflightPass = false;
         }
 
+        forgeStartupError = null;
+        refreshEngineStatus();
+        if (preflightPass && !engineAvailable) {
+            try {
+                // Start Forge inside this APK; its existing ready callback
+                // returns to HOUSE after the real card database has loaded.
+                ForgeDatabaseBootstrap.ensureReady(this);
+            } catch (Throwable t) {
+                forgeStartupError = "Forge startup failed • " + safeMessage(t);
+            }
+            refreshEngineStatus();
+        }
+        updateRunState();
+    }
+
+    private void refreshEngineStatus() {
         ForgeEngineAdapter engine = new ForgeEngineAdapter(this);
         engineAvailable = engine.isAvailable();
-        engineStatus.setText(engine.status());
-        updateRunState();
+        if (engineAvailable) {
+            forgeStartupError = null;
+        }
+        engineStatus.setText(forgeStartupError == null ? engine.status() : forgeStartupError);
     }
 
     private void updateButtons(RunState state) {
@@ -440,4 +461,3 @@ public final class MainActivity extends Activity {
         return safe.replace('\n', ' ').replace('\r', ' ').trim();
     }
 }
-
