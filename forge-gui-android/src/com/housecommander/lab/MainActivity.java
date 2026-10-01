@@ -103,7 +103,13 @@ public final class MainActivity extends Activity {
         TextView title = text("HOUSE Commander Lab", 28, true);
         root.addView(title);
 
-        TextView version = text("Native Android • Bridge 0.7 hardening", 14, false);
+        String installedVersion;
+        try {
+            installedVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException error) {
+            installedVersion = "unknown build";
+        }
+        TextView version = text("Bridge 0.7.1 • Bundled Forge startup\n" + installedVersion, 14, false);
         version.setAlpha(0.75f);
         root.addView(version);
 
@@ -246,8 +252,8 @@ public final class MainActivity extends Activity {
         refreshEngineStatus();
         if (preflightPass && !engineAvailable) {
             try {
-                // Start Forge inside this APK; its existing ready callback
-                // returns to HOUSE after the real card database has loaded.
+                // Initialize the real rules database in private storage.
+                // Progress and startup failures are polled by refreshEngineStatus().
                 ForgeDatabaseBootstrap.ensureReady(this);
             } catch (Throwable t) {
                 forgeStartupError = "Forge startup failed • " + safeMessage(t);

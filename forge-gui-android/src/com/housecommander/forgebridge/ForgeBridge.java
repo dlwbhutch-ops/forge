@@ -10,9 +10,7 @@ package com.housecommander.forgebridge;
 
 import com.google.common.eventbus.Subscribe;
 
-import forge.Forge;
 import forge.deck.Deck;
-import forge.deck.io.DeckSerializer;
 import forge.game.Game;
 import forge.game.GameEndReason;
 import forge.game.GameLogEntry;
@@ -23,9 +21,9 @@ import forge.game.event.Event;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
 import forge.game.player.RegisteredPlayer;
+import forge.item.PaperCard;
 import forge.model.FModel;
 import forge.player.GamePlayerUtil;
-import forge.util.BuildInfo;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -34,6 +32,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -60,7 +59,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * stopped earlier.
  */
 public final class ForgeBridge {
-    private static final String HOUSE_BRIDGE_VERSION = "0.7";
+    private static final String HOUSE_BRIDGE_VERSION = HouseForgeRuntime.VERSION;
     private static final long WATCHDOG_POLL_MILLIS = 1000L;
     private static final long INTERRUPT_GRACE_SECONDS = 2L;
     private static final long GAMEOVER_GRACE_SECONDS = 3L;
@@ -86,7 +85,7 @@ public final class ForgeBridge {
             return false;
         }
         try {
-            if (!Forge.afterDBloaded) {
+            if (!HouseForgeRuntime.isReady()) {
                 return false;
             }
             return FModel.getMagicDb() != null;
@@ -100,13 +99,13 @@ public final class ForgeBridge {
             return "POISONED — restart app process required: " + poisonReason;
         }
         try {
-            if (!Forge.afterDBloaded) {
-                return "linked — Forge card database loading";
+            if (!HouseForgeRuntime.isReady()) {
+                return HouseForgeRuntime.status();
             }
             if (FModel.getMagicDb() == null) {
                 return "linked — Forge card database unavailable";
             }
-            return "READY";
+            return HouseForgeRuntime.status();
         } catch (Throwable t) {
             return "unavailable — " + safeMessage(t);
         }
@@ -114,7 +113,7 @@ public final class ForgeBridge {
 
     public static String version() {
         return "Forge "
-                + BuildInfo.getVersionString()
+                + HouseForgeRuntime.forgeVersion()
                 + " / HOUSE bridge "
                 + HOUSE_BRIDGE_VERSION;
     }
@@ -414,7 +413,7 @@ public final class ForgeBridge {
 
             final Deck deck;
             try {
-                deck = DeckSerializer.fromFile(file);
+                deck = ForgeDeckLoader.load(file);
             } catch (Throwable t) {
                 throw new IOException(
                         "Forge failed while loading deck: "
@@ -427,6 +426,23 @@ public final class ForgeBridge {
 
             if (deck == null) {
                 throw new IOException("Forge could not parse deck: " + file.getAbsolutePath());
+            }
+
+            // Forge can omit unknown cards while parsing. Never run a shortened deck.
+            int loadedCards = deck.getAllCardsInASinglePool().countAll();
+            if (loadedCards != 100 || deck.getCommanders().isEmpty()) {
+                throw new IOException("STRICT GATE: " + file.getName() + " loaded "
+                        + loadedCards + "/100 cards in Forge; commanders="
+                        + deck.getCommanders().size() + ". Check unsupported card names.");
+            }
+            List<String> unsupported = new ArrayList<>();
+            for (Map.Entry<PaperCard, Integer> entry : deck.getAllCardsInASinglePool()) {
+                if (entry.getKey().getRules().isUnsupported()) unsupported.add(entry.getKey().getName());
+            }
+            if (!unsupported.isEmpty()) {
+                throw new IOException("STRICT GATE: " + file.getName()
+                        + " contains cards without Forge rules scripts: "
+                        + String.join(", ", unsupported) + ". No game was simulated.");
             }
 
             String playerName = deck.getName();
