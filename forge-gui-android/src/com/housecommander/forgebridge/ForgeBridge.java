@@ -534,4 +534,377 @@ public final class ForgeBridge {
                 "HOUSE_WATCHDOG=" + heartbeat.describe(),
                 "HOUSE_FINAL_PROGRESS=" + snapshotText(trySnapshot(game)),
                 "HOUSE_WINNER=" + winner.trim()
-        )
+        );
+    }
+
+    /**
+     * Signals game-over, interrupts the simulation worker, and verifies that
+     * the worker actually dies. If it does not, the bridge is poisoned so no
+     * later game can run concurrently with a zombie Forge simulation.
+     */
+    private static void abortGame(
+            Future<?> future,
+            ExecutorService executor,
+            Game game,
+            Throwable originalFailure,
+            String reason
+    ) {
+        /*
+         * First ask the worker to stop using interruption only. This avoids
+         * mutating Game state from the watchdog thread unless Forge ignores the
+         * normal cancellation path.
+         */
+        future.cancel(true);
+        executor.shutdownNow();
+
+        boolean terminated = awaitTermination(
+                executor,
+                INTERRUPT_GRACE_SECONDS,
+                originalFailure
+        );
+
+        if (!terminated) {
+            /*
+             * Escalation: Forge ignored interruption. setGameOver() is
+             * synchronized inside Forge and gives its game loop an explicit
+             * terminal state to observe.
+             */
+            forceDrawIfNeeded(game);
+            terminated = awaitTermination(
+                    executor,
+                    GAMEOVER_GRACE_SECONDS,
+                    originalFailure
+            );
+        }
+
+        if (!terminated) {
+            long totalGrace = INTERRUPT_GRACE_SECONDS + GAMEOVER_GRACE_SECONDS;
+            String message = "Forge simulation thread did not terminate within "
+                    + totalGrace
+                    + " seconds after "
+                    + reason;
+            poisonEngine(message);
+            if (originalFailure != null) {
+                originalFailure.addSuppressed(new IllegalStateException(message));
+            }
+        }
+    }
+
+    private static boolean awaitTermination(
+            ExecutorService executor,
+            long seconds,
+            Throwable originalFailure
+    ) {
+        try {
+            return executor.awaitTermination(seconds, TimeUnit.SECONDS);
+        } catch (InterruptedException waitInterrupted) {
+            Thread.currentThread().interrupt();
+            if (originalFailure != null) {
+                originalFailure.addSuppressed(waitInterrupted);
+            }
+            return false;
+        }
+    }
+
+    private static void shutdownCompletedExecutor(ExecutorService executor) {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(INTERRUPT_GRACE_SECONDS, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                if (!executor.awaitTermination(GAMEOVER_GRACE_SECONDS, TimeUnit.SECONDS)) {
+                    poisonEngine("Completed Forge simulation executor would not terminate");
+                }
+            }
+        } catch (InterruptedException interrupted) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void poisonEngine(String reason) {
+        poisonReason = reason == null ? "unknown non-terminating simulation" : reason;
+        ENGINE_POISONED.set(true);
+    }
+
+    private static void forceDrawIfNeeded(Game game) {
+        try {
+            if (game != null && game.getOutcome() == null) {
+                game.setGameOver(GameEndReason.Draw);
+            }
+        } catch (Throwable ignored) {
+            // Cleanup only; never hide the original failure.
+        }
+    }
+
+    /**
+     * Read only cheap, high-level fields that indicate the engine is moving.
+     * Any concurrent-read failure returns null and is handled conservatively by
+     * the watchdog.
+     */
+    private static ProgressSnapshot trySnapshot(Game game) {
+        try {
+            if (game == null) {
+                return null;
+            }
+
+            PhaseHandler phaseHandler = game.getPhaseHandler();
+            int turn = -1;
+            String phase = "<none>";
+            String activePlayer = "<none>";
+
+            if (phaseHandler != null) {
+                turn = phaseHandler.getTurn();
+                Object phaseValue = phaseHandler.getPhase();
+                phase = phaseValue == null ? "<none>" : String.valueOf(phaseValue);
+
+                Player player = phaseHandler.getPlayerTurn();
+                if (player != null) {
+                    String name = player.getName();
+                    activePlayer = name == null ? "<unnamed>" : name;
+                }
+            }
+
+            int logEntries = 0;
+            if (game.getGameLog() != null) {
+                List<GameLogEntry> entries = game.getGameLog().getAllEntries();
+                logEntries = entries == null ? 0 : entries.size();
+            }
+
+            boolean gameOver = game.isGameOver();
+            boolean hasOutcome = game.getOutcome() != null;
+
+            return new ProgressSnapshot(
+                    turn,
+                    phase,
+                    activePlayer,
+                    logEntries,
+                    gameOver,
+                    hasOutcome
+            );
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static final class ProgressHeartbeat {
+        private final AtomicLong lastActivityNs;
+        private final AtomicLong eventCount = new AtomicLong(0L);
+        private volatile String lastEvent = "<none>";
+
+        private ProgressHeartbeat(long startedNs) {
+            this.lastActivityNs = new AtomicLong(startedNs);
+        }
+
+        @Subscribe
+        public void onGameEvent(Event event) {
+            lastEvent = event == null
+                    ? "<null>"
+                    : event.getClass().getSimpleName();
+            eventCount.incrementAndGet();
+            lastActivityNs.set(System.nanoTime());
+        }
+
+        private long lastActivityNs() {
+            return lastActivityNs.get();
+        }
+
+        private String describe() {
+            long idleMs = TimeUnit.NANOSECONDS.toMillis(
+                    Math.max(0L, System.nanoTime() - lastActivityNs.get())
+            );
+            return "events="
+                    + eventCount.get()
+                    + ",lastEvent="
+                    + sanitize(lastEvent)
+                    + ",idleMs="
+                    + idleMs;
+        }
+    }
+
+    private static final class ProgressSnapshot {
+        private final int turn;
+        private final String phase;
+        private final String activePlayer;
+        private final int logEntries;
+        private final boolean gameOver;
+        private final boolean hasOutcome;
+
+        private ProgressSnapshot(
+                int turn,
+                String phase,
+                String activePlayer,
+                int logEntries,
+                boolean gameOver,
+                boolean hasOutcome
+        ) {
+            this.turn = turn;
+            this.phase = phase;
+            this.activePlayer = activePlayer;
+            this.logEntries = logEntries;
+            this.gameOver = gameOver;
+            this.hasOutcome = hasOutcome;
+        }
+
+
+        @Override
+        public String toString() {
+            return "turn=" + turn
+                    + ",phase=" + sanitize(phase)
+                    + ",active=" + sanitize(activePlayer)
+                    + ",logEntries=" + logEntries
+                    + ",gameOver=" + gameOver
+                    + ",hasOutcome=" + hasOutcome;
+        }
+    }
+
+    private static String snapshotText(ProgressSnapshot snapshot) {
+        return snapshot == null ? "unavailable" : snapshot.toString();
+    }
+
+    /**
+     * Failure logging is best-effort and can never mask the original engine
+     * exception. Runtime errors from concurrent Forge state reads are also
+     * attached as suppressed errors rather than replacing the root failure.
+     */
+    private static void writeFailureLog(
+            Game game,
+            String logPath,
+            long elapsedMs,
+            Throwable originalFailure,
+            String... markers
+    ) {
+        try {
+            writeLog(game, logPath, elapsedMs, markers);
+        } catch (Throwable logFailure) {
+            if (originalFailure != null && logFailure != originalFailure) {
+                originalFailure.addSuppressed(logFailure);
+            }
+
+            /*
+             * If the literal Forge log itself cannot be read safely after a
+             * catastrophic worker failure, still leave a small HOUSE diagnostic
+             * file instead of leaving no evidence at all.
+             */
+            try {
+                writeMinimalFailureLog(logPath, elapsedMs, logFailure, markers);
+            } catch (Throwable fallbackFailure) {
+                if (originalFailure != null && fallbackFailure != originalFailure) {
+                    originalFailure.addSuppressed(fallbackFailure);
+                }
+            }
+        }
+    }
+
+    private static void writeMinimalFailureLog(
+            String logPath,
+            long elapsedMs,
+            Throwable logFailure,
+            String... markers
+    ) throws IOException {
+        if (logPath == null || logPath.trim().isEmpty()) {
+            return;
+        }
+
+        File file = new File(logPath);
+        File parent = file.getParentFile();
+        if (parent != null
+                && !parent.exists()
+                && !parent.mkdirs()
+                && !parent.isDirectory()) {
+            throw new IOException("Could not create log directory: " + parent.getAbsolutePath());
+        }
+
+        try (BufferedWriter out = new BufferedWriter(new FileWriter(file, false))) {
+            out.write("HOUSE_ENGINE=" + version());
+            out.newLine();
+            out.write("HOUSE_ELAPSED_MS=" + elapsedMs);
+            out.newLine();
+            out.write("HOUSE_LOG_CAPTURE_ERROR="
+                    + logFailure.getClass().getName()
+                    + ": "
+                    + safeMessage(logFailure));
+            out.newLine();
+
+            if (markers != null) {
+                for (String marker : markers) {
+                    if (marker == null || marker.trim().isEmpty()) {
+                        continue;
+                    }
+                    out.write(sanitize(marker));
+                    out.newLine();
+                }
+            }
+        }
+    }
+
+    private static void writeLog(
+            Game game,
+            String logPath,
+            long elapsedMs,
+            String... markers
+    ) throws IOException {
+        if (logPath == null || logPath.trim().isEmpty()) {
+            return;
+        }
+        if (game == null) {
+            throw new IOException("Cannot write HOUSE game log: Game is null");
+        }
+
+        File file = new File(logPath);
+        File parent = file.getParentFile();
+        if (parent != null
+                && !parent.exists()
+                && !parent.mkdirs()
+                && !parent.isDirectory()) {
+            throw new IOException("Could not create log directory: " + parent.getAbsolutePath());
+        }
+
+        List<GameLogEntry> entries = game.getGameLog().getAllEntries();
+
+        try (BufferedWriter out = new BufferedWriter(new FileWriter(file, false))) {
+            out.write("HOUSE_ENGINE=" + version());
+            out.newLine();
+            out.write("HOUSE_ELAPSED_MS=" + elapsedMs);
+            out.newLine();
+
+            if (entries != null) {
+                for (GameLogEntry entry : entries) {
+                    out.write(String.valueOf(entry));
+                    out.newLine();
+                }
+            }
+
+            if (markers != null) {
+                for (String marker : markers) {
+                    if (marker == null || marker.trim().isEmpty()) {
+                        continue;
+                    }
+                    out.write(sanitize(marker));
+                    out.newLine();
+                }
+            }
+        }
+    }
+
+    private static long elapsedMillis(long startedNs) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNs);
+    }
+
+    private static String sanitize(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
+    private static String safeMessage(Throwable t) {
+        if (t == null) {
+            return "Unknown error";
+        }
+        String message = t.getMessage();
+        if (message == null || message.trim().isEmpty()) {
+            return t.getClass().getSimpleName();
+        }
+        return sanitize(message);
+    }
+}
