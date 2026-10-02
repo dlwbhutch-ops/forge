@@ -55,7 +55,7 @@ import java.util.zip.ZipInputStream;
  * bridge. No winner is guessed when Forge fails or stalls.
  */
 public final class HouseMacApp {
-    private static final String APP_VERSION = "0.9.0-mac-preview";
+    private static final String APP_VERSION = "0.9.1-mac-selfcontained";
     private static final int HARD_TIMEOUT_SECONDS = 60 * 60;
     private static final int STALL_TIMEOUT_SECONDS = 3 * 60;
 
