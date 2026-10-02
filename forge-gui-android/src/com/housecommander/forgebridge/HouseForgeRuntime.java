@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 
 /** Owns publication of a completely initialized rules database. */
 public final class HouseForgeRuntime {
-    public static final String VERSION = "0.7.1";
+    public static final String VERSION = "0.9.0-spectator";
     private static volatile boolean ready;
     private static volatile boolean failed;
     private static volatile String status = "Waiting to initialize bundled Forge database";
