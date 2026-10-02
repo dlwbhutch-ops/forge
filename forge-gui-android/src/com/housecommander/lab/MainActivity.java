@@ -39,6 +39,7 @@ public final class MainActivity extends Activity {
     private TextView engineStatus;
     private TextView runStatus;
     private TextView details;
+    private TextView spectatorView;
     private ProgressBar progress;
     private Button testButton;
     private Button runOneButton;
@@ -56,6 +57,7 @@ public final class MainActivity extends Activity {
         public void run() {
             refreshEngineStatus();
             updateRunState();
+            updateSpectator();
             handler.postDelayed(this, 1000L);
         }
     };
@@ -109,7 +111,7 @@ public final class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException error) {
             installedVersion = "unknown build";
         }
-        TextView version = text("Bridge 0.7.1 • Bundled Forge startup\n" + installedVersion, 14, false);
+        TextView version = text("Bridge 0.9 playground • Live spectator preview\n" + installedVersion, 14, false);
         version.setAlpha(0.75f);
         root.addView(version);
 
@@ -188,6 +190,33 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(resetButton);
+
+        root.addView(section("SPECTATOR"));
+
+        TextView spectatorHint = text(
+                "Live Forge view • shows turn, phase, life, zones, battlefield and latest action.",
+                13,
+                false
+        );
+        spectatorHint.setAlpha(0.8f);
+        root.addView(spectatorHint);
+
+        spectatorView = text("No live match", 14, false);
+        spectatorView.setPadding(0, dp(10), 0, dp(8));
+        root.addView(spectatorView);
+
+        Button watchedTest = button("Run 1 watched Forge game");
+        watchedTest.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startTest();
+            }
+        });
+        root.addView(watchedTest);
+
+        Button pilotPreview = button("Pilot a deck vs AI — next build");
+        pilotPreview.setEnabled(false);
+        root.addView(pilotPreview);
 
         root.addView(section("LIVE STATUS"));
 
@@ -325,6 +354,14 @@ public final class MainActivity extends Activity {
         } else {
             startService(intent);
         }
+    }
+
+    private void updateSpectator() {
+        if (spectatorView == null) {
+            return;
+        }
+        ForgeEngineAdapter engine = new ForgeEngineAdapter(this);
+        spectatorView.setText(engine.spectatorSnapshot());
     }
 
     private void updateRunState() {
