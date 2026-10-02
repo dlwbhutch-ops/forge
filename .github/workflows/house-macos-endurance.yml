@@ -1,0 +1,319 @@
+name: HOUSE Commander Lab macOS Endurance
+
+on:
+  push:
+    branches:
+      - house-commander-lab-v092-endurance
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout HOUSE Endurance branch
+        uses: actions/checkout@v4
+
+      - name: Bundle Forge rules resources
+        run: python3 .github/scripts/package-house-runtime.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Install Maven 3.8.1
+        run: |
+          curl -L -o apache-maven-3.8.1-bin.tar.gz \
+            https://archive.apache.org/dist/maven/maven-3/3.8.1/binaries/apache-maven-3.8.1-bin.tar.gz
+          tar xf apache-maven-3.8.1-bin.tar.gz
+          echo "$GITHUB_WORKSPACE/apache-maven-3.8.1/bin" >> "$GITHUB_PATH"
+
+      - name: Install virtual framebuffer
+        run: command -v Xvfb >/dev/null 2>&1 || { sudo apt update && sudo apt install -y xvfb; }
+
+      - name: Build Forge desktop engine jar
+        run: |
+          export DISPLAY=":1"
+          Xvfb :1 -screen 0 800x600x8 &
+          export _JAVA_OPTIONS="-Xmx3g"
+          mvn -U -B -pl forge-gui-desktop -am package \
+            -Dmaven.test.skip=true \
+            -Dcheckstyle.skip=true
+
+      - name: Compile HOUSE Endurance shell, worker, and bridge
+        run: |
+          set -euo pipefail
+          FORGE_JAR="$(find forge-gui-desktop/target -maxdepth 1 -type f -name '*jar-with-dependencies.jar' | head -n 1)"
+          echo "FORGE_JAR=$FORGE_JAR"
+          test -n "$FORGE_JAR"
+          mkdir -p house-mac-classes
+
+          javac -encoding UTF-8 -cp "$FORGE_JAR" -d house-mac-classes \
+            forge-gui-android/src/com/housecommander/core/AssetSource.java \
+            forge-gui-android/src/com/housecommander/core/Csv.java \
+            forge-gui-android/src/com/housecommander/core/ForgeDeckCounter.java \
+            forge-gui-android/src/com/housecommander/core/Names.java \
+            forge-gui-android/src/com/housecommander/core/ValidationReport.java \
+            forge-gui-android/src/com/housecommander/core/DeckSpec.java \
+            forge-gui-android/src/com/housecommander/core/PodSpec.java \
+            forge-gui-android/src/com/housecommander/core/HousePackage.java \
+            forge-gui-android/src/com/housecommander/core/HousePackageLoader.java \
+            forge-gui-android/src/com/housecommander/forgebridge/HouseHeadlessGui.java \
+            forge-gui-android/src/com/housecommander/forgebridge/HouseForgeRuntime.java \
+            forge-gui-android/src/com/housecommander/forgebridge/ForgeDeckLoader.java \
+            forge-gui-android/src/com/housecommander/forgebridge/HouseSpectatorState.java \
+            forge-gui-android/src/com/housecommander/forgebridge/ForgeBridge.java \
+            .github/scripts/HouseGameWorker.java \
+            .github/scripts/HouseMacApp.java
+
+          jar --create --file house-mac-launcher.jar -C house-mac-classes .
+          jar tf house-mac-launcher.jar | grep -q 'com/housecommander/mac/HouseGameWorker.class'
+          cp "$FORGE_JAR" house-forge-all.jar
+
+      - name: Assemble base macOS app bundle
+        run: |
+          set -euo pipefail
+          APP="dist/HOUSE Commander Lab.app"
+          RES="$APP/Contents/Resources"
+          MACOS="$APP/Contents/MacOS"
+          mkdir -p "$RES" "$MACOS"
+
+          cp house-mac-launcher.jar "$RES/"
+          cp house-forge-all.jar "$RES/"
+          cp forge-gui-android/assets/house-forge-runtime.zip "$RES/"
+          cp forge-gui-android/assets/house-forge-runtime.id "$RES/"
+          cp -R forge-gui-android/assets/house19 "$RES/"
+          cp forge-gui/LICENSE.txt "$RES/"
+
+          if [ -f forge-gui-desktop/src/main/config/Forge.icns ]; then
+            cp forge-gui-desktop/src/main/config/Forge.icns "$RES/HOUSE.icns"
+          fi
+
+          cat > "$MACOS/HouseCommanderLab" <<'SH'
+          #!/bin/bash
+          set -euo pipefail
+
+          APP_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+          RES="$APP_ROOT/Contents/Resources"
+          BUNDLED_JAVA="$APP_ROOT/Contents/Runtime/bin/java"
+
+          if [ ! -x "$BUNDLED_JAVA" ]; then
+            /usr/bin/osascript -e 'display dialog "HOUSE Commander Lab could not find its bundled Java runtime. Please reinstall HOUSE Commander Lab 0.9.2." buttons {"OK"} default button "OK" with title "HOUSE Commander Lab"'
+            exit 1
+          fi
+
+          MEM_BYTES="$(/usr/sbin/sysctl -n hw.memsize 2>/dev/null || echo 8589934592)"
+          MEM_MB="$(( MEM_BYTES / 1024 / 1024 ))"
+
+          # Parent UI stays small; each literal Forge game gets its own larger
+          # isolated heap. This keeps giant token boards from starving macOS.
+          PARENT_HEAP_MB=2048
+          if [ "$MEM_MB" -lt 12288 ]; then
+            WORKER_HEAP_MB=4096
+          elif [ "$MEM_MB" -lt 24576 ]; then
+            WORKER_HEAP_MB=8192
+          else
+            WORKER_HEAP_MB=12288
+          fi
+
+          exec "$BUNDLED_JAVA" \
+            -Xmx${PARENT_HEAP_MB}m \
+            -Dfile.encoding=UTF-8 \
+            -Dhouse.resources="$RES" \
+            -Dhouse.worker.heap.mb="${WORKER_HEAP_MB}" \
+            -cp "$RES/house-mac-launcher.jar:$RES/house-forge-all.jar" \
+            com.housecommander.mac.HouseMacApp
+          SH
+          chmod +x "$MACOS/HouseCommanderLab"
+
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key><string>English</string>
+            <key>CFBundleDisplayName</key><string>HOUSE Commander Lab</string>
+            <key>CFBundleExecutable</key><string>HouseCommanderLab</string>
+            <key>CFBundleIdentifier</key><string>com.housecommander.lab.mac</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>HOUSE Commander Lab</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>0.9.2</string>
+            <key>CFBundleVersion</key><string>0.9.2</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSRequiresAquaSystemAppearance</key><false/>
+            <key>CFBundleIconFile</key><string>HOUSE.icns</string>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Smoke test Endurance base bundle
+        run: |
+          set -euo pipefail
+          RES="$GITHUB_WORKSPACE/dist/HOUSE Commander Lab.app/Contents/Resources"
+          timeout 360 java -Xmx1024m \
+            -Djava.awt.headless=true \
+            -Dhouse.resources="$RES" \
+            -cp "$RES/house-mac-launcher.jar:$RES/house-forge-all.jar" \
+            com.housecommander.mac.HouseMacApp --smoke \
+            | tee house-mac-endurance-smoke.log
+          grep -q 'HOUSE_MAC_SMOKE=PASS' house-mac-endurance-smoke.log
+          grep -q 'HOUSE_MAC_ENDURANCE=' house-mac-endurance-smoke.log
+
+      - name: Package base app for native Mac finalization
+        run: |
+          cd dist
+          zip -qry "HOUSE-Commander-Lab-macOS-0.9.2-base.zip" "HOUSE Commander Lab.app"
+
+      - name: Upload base app
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-macOS-0.9.2-base
+          path: dist/HOUSE-Commander-Lab-macOS-0.9.2-base.zip
+          if-no-files-found: error
+
+  mac-finalize:
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+      - name: Set up JDK 17 on macOS
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download base HOUSE Endurance app
+        uses: actions/download-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-macOS-0.9.2-base
+          path: incoming
+
+      - name: Unpack app
+        run: |
+          set -euo pipefail
+          mkdir -p product
+          unzip -q incoming/HOUSE-Commander-Lab-macOS-0.9.2-base.zip -d product
+          plutil -lint "product/HOUSE Commander Lab.app/Contents/Info.plist"
+
+      - name: Create bundled Java runtime
+        run: |
+          set -euo pipefail
+          APP="product/HOUSE Commander Lab.app"
+          RUNTIME="$APP/Contents/Runtime"
+
+          "$JAVA_HOME/bin/jlink" \
+            --module-path "$JAVA_HOME/jmods" \
+            --add-modules ALL-MODULE-PATH \
+            --strip-debug \
+            --no-man-pages \
+            --no-header-files \
+            --compress=2 \
+            --output "$RUNTIME"
+
+          test -x "$RUNTIME/bin/java"
+          "$RUNTIME/bin/java" -version
+          du -sh "$RUNTIME"
+
+      - name: Validate with bundled Java on macOS
+        run: |
+          set -euo pipefail
+          APP="product/HOUSE Commander Lab.app"
+          RES="$APP/Contents/Resources"
+          JAVA="$APP/Contents/Runtime/bin/java"
+
+          "$JAVA" -Xmx1024m \
+            -Djava.awt.headless=true \
+            -Dhouse.resources="$RES" \
+            -cp "$RES/house-mac-launcher.jar:$RES/house-forge-all.jar" \
+            com.housecommander.mac.HouseMacApp --smoke \
+            | tee house-mac-bundled-endurance-smoke.log
+
+          grep -q 'HOUSE_MAC_SMOKE=PASS' house-mac-bundled-endurance-smoke.log
+          grep -q 'isolated-workers' house-mac-bundled-endurance-smoke.log
+          jar tf "$RES/house-mac-launcher.jar" | grep -q 'com/housecommander/mac/HouseGameWorker.class'
+
+      - name: Ad-hoc sign complete app
+        run: |
+          set -euo pipefail
+          APP="product/HOUSE Commander Lab.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Prepare installer folder
+        run: |
+          set -euo pipefail
+          mkdir -p installer
+          cp -R "product/HOUSE Commander Lab.app" installer/
+          ln -s /Applications installer/Applications
+          cat > "installer/README FIRST.txt" <<'TXT'
+          HOUSE Commander Lab 0.9.2 — Endurance Runner
+          ==============================================
+
+          This build includes its own Java 17 runtime.
+
+          Endurance changes:
+          - One isolated Forge process per literal Commander game.
+          - No practical wall-clock ceiling while game events keep progressing.
+          - No token cap, turn cap, or card-effect shortcut.
+          - 5-minute true-idle stall detection.
+          - Up to 30 minutes of CPU-busy grace for enormous board calculations.
+          - Automatic retry queue so one bad game does not stop the tournament.
+          - Checkpoint after every completed game; resume after app/system restart.
+          - Adaptive Forge worker heap: 4 GB / 8 GB / 12 GB based on Mac RAM.
+          - Tournament spectator rendering throttled to 1.5 seconds.
+
+          Install:
+          1. Drag HOUSE Commander Lab.app to Applications.
+          2. Open HOUSE Commander Lab from Applications.
+
+          This private development build is ad-hoc signed but not Apple-notarized.
+          macOS may require:
+             System Settings > Privacy & Security > Open Anyway
+          TXT
+
+      - name: Build DMG and ZIP
+        run: |
+          set -euo pipefail
+
+          hdiutil create \
+            -volname "HOUSE Commander Lab 0.9.2 Endurance" \
+            -srcfolder installer \
+            -ov \
+            -format UDZO \
+            "HOUSE-Commander-Lab-macOS-0.9.2-Endurance.dmg"
+
+          cd product
+          ditto -c -k --sequesterRsrc --keepParent \
+            "HOUSE Commander Lab.app" \
+            "../HOUSE-Commander-Lab-macOS-0.9.2-Endurance.zip"
+          cd ..
+
+          shasum -a 256 \
+            HOUSE-Commander-Lab-macOS-0.9.2-Endurance.dmg \
+            HOUSE-Commander-Lab-macOS-0.9.2-Endurance.zip \
+            | tee SHA256SUMS.txt
+
+          ls -lh HOUSE-Commander-Lab-macOS-0.9.2-Endurance.*
+
+      - name: Upload HOUSE Endurance product
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-macOS-0.9.2-Endurance
+          path: |
+            HOUSE-Commander-Lab-macOS-0.9.2-Endurance.dmg
+            HOUSE-Commander-Lab-macOS-0.9.2-Endurance.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Upload native verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-macOS-0.9.2-Endurance-verification
+          path: house-mac-bundled-endurance-smoke.log
+          if-no-files-found: ignore
