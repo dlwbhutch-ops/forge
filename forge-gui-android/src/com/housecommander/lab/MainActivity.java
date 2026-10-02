@@ -19,7 +19,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.housecommander.core.HousePackage;
-import com.housecommander.core.HousePackageLoader;
 import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
@@ -45,6 +44,12 @@ public final class MainActivity extends Activity {
     private Button run500Button;
     private Button pauseButton;
     private Button resetButton;
+    private TextView libraryStatus;
+    private TextView libraryDetails;
+    private Button importButton;
+    private Button rosterButton;
+    private Button defaultRosterButton;
+    private DeckLibraryController libraryController;
 
     private boolean preflightPass;
     private boolean engineAvailable;
@@ -70,6 +75,13 @@ public final class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 100);
         }
 
+        libraryController = new DeckLibraryController(this, new DeckLibraryController.Callback() {
+            @Override
+            public void onLibraryChanged() {
+                runPreflight();
+            }
+        });
+
         setContentView(buildUi());
         runPreflight();
     }
@@ -93,6 +105,15 @@ public final class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (libraryController != null
+                && libraryController.handleActivityResult(requestCode, resultCode, data)) {
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
     private View buildUi() {
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -109,7 +130,7 @@ public final class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException error) {
             installedVersion = "unknown build";
         }
-        TextView version = text("Bridge 0.7.1 • Bundled Forge startup\n" + installedVersion, 14, false);
+        TextView version = text("Bridge 0.8 • Deck Library + Roster\n" + installedVersion, 14, false);
         version.setAlpha(0.75f);
         root.addView(version);
 
@@ -141,6 +162,43 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(preflight);
+
+        root.addView(section("DECK LIBRARY"));
+
+        libraryStatus = text("Loading deck library…", 16, true);
+        root.addView(libraryStatus);
+
+        importButton = button("Import Forge .dck deck");
+        importButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                libraryController.openImporter();
+            }
+        });
+        root.addView(importButton);
+
+        rosterButton = button("Select tournament roster");
+        rosterButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                libraryController.showRosterPicker();
+            }
+        });
+        root.addView(rosterButton);
+
+        defaultRosterButton = button("Restore bundled HOUSE 19");
+        defaultRosterButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                libraryController.confirmRestoreDefaultRoster();
+            }
+        });
+        root.addView(defaultRosterButton);
+
+        libraryDetails = text("", 13, false);
+        libraryDetails.setPadding(0, dp(8), 0, 0);
+        libraryDetails.setAlpha(0.82f);
+        root.addView(libraryDetails);
 
         root.addView(section("TOURNAMENT"));
 
@@ -226,8 +284,7 @@ public final class MainActivity extends Activity {
 
     private void runPreflight() {
         try {
-            HousePackage pack = HousePackageLoader.load(AndroidAssets.from(this), "house19");
-            HouseInstall.ensureDeckFiles(this, pack);
+            HousePackage pack = HouseRuntime.loadActivePackage(this);
 
             if (pack.schedule() == null || pack.schedule().isEmpty()) {
                 throw new IllegalStateException("HOUSE schedule contains no pods");
@@ -260,7 +317,21 @@ public final class MainActivity extends Activity {
             }
             refreshEngineStatus();
         }
+        refreshLibraryViews();
         updateRunState();
+    }
+
+    private void refreshLibraryViews() {
+        if (libraryController == null || libraryStatus == null || libraryDetails == null) {
+            return;
+        }
+        try {
+            libraryStatus.setText(libraryController.summary());
+            libraryDetails.setText(libraryController.details());
+        } catch (Throwable t) {
+            libraryStatus.setText("Deck Library blocked • " + safeMessage(t));
+            libraryDetails.setText("");
+        }
     }
 
     private void refreshEngineStatus() {
@@ -282,6 +353,9 @@ public final class MainActivity extends Activity {
         run500Button.setEnabled(enabled);
         pauseButton.setEnabled(running);
         resetButton.setEnabled(!running);
+        importButton.setEnabled(!running);
+        rosterButton.setEnabled(!running);
+        defaultRosterButton.setEnabled(!running);
 
         long games500 = (long) podCount * 500L;
 
