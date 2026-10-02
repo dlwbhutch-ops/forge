@@ -1,0 +1,176 @@
+name: HOUSE Commander Lab macOS
+
+on:
+  push:
+    branches:
+      - house-commander-lab-v09-mac
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout HOUSE Mac branch
+        uses: actions/checkout@v4
+
+      - name: Bundle Forge rules resources
+        run: python3 .github/scripts/package-house-runtime.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Install Maven 3.8.1
+        run: |
+          curl -L -o apache-maven-3.8.1-bin.tar.gz \
+            https://archive.apache.org/dist/maven/maven-3/3.8.1/binaries/apache-maven-3.8.1-bin.tar.gz
+          tar xf apache-maven-3.8.1-bin.tar.gz
+          echo "$GITHUB_WORKSPACE/apache-maven-3.8.1/bin" >> "$GITHUB_PATH"
+
+      - name: Install virtual framebuffer
+        run: command -v Xvfb >/dev/null 2>&1 || { sudo apt update && sudo apt install -y xvfb; }
+
+      - name: Build Forge desktop engine jar
+        run: |
+          export DISPLAY=":1"
+          Xvfb :1 -screen 0 800x600x8 &
+          export _JAVA_OPTIONS="-Xmx3g"
+          mvn -U -B -pl forge-gui-desktop -am package \
+            -Dmaven.test.skip=true \
+            -Dcheckstyle.skip=true
+
+      - name: Compile HOUSE Mac shell and bridge
+        run: |
+          set -euo pipefail
+          FORGE_JAR="$(find forge-gui-desktop/target -maxdepth 1 -type f -name '*jar-with-dependencies.jar' | head -n 1)"
+          echo "FORGE_JAR=$FORGE_JAR"
+          test -n "$FORGE_JAR"
+          mkdir -p house-mac-classes
+
+          javac -encoding UTF-8 -cp "$FORGE_JAR" -d house-mac-classes \
+            forge-gui-android/src/com/housecommander/core/AssetSource.java \
+            forge-gui-android/src/com/housecommander/core/Csv.java \
+            forge-gui-android/src/com/housecommander/core/ForgeDeckCounter.java \
+            forge-gui-android/src/com/housecommander/core/Names.java \
+            forge-gui-android/src/com/housecommander/core/ValidationReport.java \
+            forge-gui-android/src/com/housecommander/core/DeckSpec.java \
+            forge-gui-android/src/com/housecommander/core/PodSpec.java \
+            forge-gui-android/src/com/housecommander/core/HousePackage.java \
+            forge-gui-android/src/com/housecommander/core/HousePackageLoader.java \
+            forge-gui-android/src/com/housecommander/forgebridge/HouseHeadlessGui.java \
+            forge-gui-android/src/com/housecommander/forgebridge/HouseForgeRuntime.java \
+            forge-gui-android/src/com/housecommander/forgebridge/ForgeDeckLoader.java \
+            forge-gui-android/src/com/housecommander/forgebridge/HouseSpectatorState.java \
+            forge-gui-android/src/com/housecommander/forgebridge/ForgeBridge.java \
+            .github/scripts/HouseMacApp.java
+
+          jar --create --file house-mac-launcher.jar -C house-mac-classes .
+          cp "$FORGE_JAR" house-forge-all.jar
+
+      - name: Assemble macOS app bundle
+        run: |
+          set -euo pipefail
+          APP="dist/HOUSE Commander Lab.app"
+          RES="$APP/Contents/Resources"
+          MACOS="$APP/Contents/MacOS"
+          mkdir -p "$RES" "$MACOS"
+
+          cp house-mac-launcher.jar "$RES/"
+          cp house-forge-all.jar "$RES/"
+          cp forge-gui-android/assets/house-forge-runtime.zip "$RES/"
+          cp forge-gui-android/assets/house-forge-runtime.id "$RES/"
+          cp -R forge-gui-android/assets/house19 "$RES/"
+          cp forge-gui/LICENSE.txt "$RES/"
+
+          if [ -f forge-gui-desktop/src/main/config/Forge.icns ]; then
+            cp forge-gui-desktop/src/main/config/Forge.icns "$RES/HOUSE.icns"
+          fi
+
+          cat > "$MACOS/HouseCommanderLab" <<'SH'
+          #!/bin/bash
+          set -e
+          APP_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+          RES="$APP_ROOT/Contents/Resources"
+
+          JAVA_HOME_FOUND=""
+          if [ -x /usr/libexec/java_home ]; then
+            JAVA_HOME_FOUND="$(/usr/libexec/java_home 2>/dev/null || true)"
+          fi
+
+          if [ -n "$JAVA_HOME_FOUND" ] && [ -x "$JAVA_HOME_FOUND/bin/java" ]; then
+            JAVA="$JAVA_HOME_FOUND/bin/java"
+          elif command -v java >/dev/null 2>&1; then
+            JAVA="$(command -v java)"
+          else
+            /usr/bin/osascript -e 'display dialog "HOUSE Commander Lab requires Java 17 or newer. Install Temurin/OpenJDK 17 or 21, then reopen the app." buttons {"OK"} default button "OK" with title "HOUSE Commander Lab"'
+            exit 1
+          fi
+
+          exec "$JAVA" \
+            -Xmx4096m \
+            -Dfile.encoding=UTF-8 \
+            -Dhouse.resources="$RES" \
+            -cp "$RES/house-mac-launcher.jar:$RES/house-forge-all.jar" \
+            com.housecommander.mac.HouseMacApp
+          SH
+          chmod +x "$MACOS/HouseCommanderLab"
+
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key><string>English</string>
+            <key>CFBundleDisplayName</key><string>HOUSE Commander Lab</string>
+            <key>CFBundleExecutable</key><string>HouseCommanderLab</string>
+            <key>CFBundleIdentifier</key><string>com.housecommander.lab.mac</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>HOUSE Commander Lab</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>0.9.0</string>
+            <key>CFBundleVersion</key><string>0.9.0</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSRequiresAquaSystemAppearance</key><false/>
+            <key>CFBundleIconFile</key><string>HOUSE.icns</string>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Smoke test packaged Mac build
+        run: |
+          set -euo pipefail
+          RES="$GITHUB_WORKSPACE/dist/HOUSE Commander Lab.app/Contents/Resources"
+          timeout 360 java -Xmx1024m \
+            -Djava.awt.headless=true \
+            -Dhouse.resources="$RES" \
+            -cp "$RES/house-mac-launcher.jar:$RES/house-forge-all.jar" \
+            com.housecommander.mac.HouseMacApp --smoke \
+            | tee house-mac-smoke.log
+          grep -q 'HOUSE_MAC_SMOKE=PASS' house-mac-smoke.log
+
+      - name: Package Mac app
+        run: |
+          cd dist
+          zip -qry "HOUSE-Commander-Lab-macOS-0.9.0.zip" "HOUSE Commander Lab.app"
+          ls -lh "HOUSE-Commander-Lab-macOS-0.9.0.zip"
+
+      - name: Upload Mac diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-macOS-diagnostics
+          path: |
+            house-mac-smoke.log
+          if-no-files-found: ignore
+
+      - name: Upload HOUSE macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-macOS
+          path: dist/HOUSE-Commander-Lab-macOS-0.9.0.zip
+          if-no-files-found: error
