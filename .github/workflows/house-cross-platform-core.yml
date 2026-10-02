@@ -1,0 +1,45 @@
+name: HOUSE Shared Core Cross-Platform
+
+on:
+  push:
+    branches:
+      - house-commander-lab-v10-cross-platform
+    paths:
+      - 'house-commander-core/**'
+      - 'pom.xml'
+      - 'forge-gui-android/pom.xml'
+      - 'forge-gui-desktop/pom.xml'
+      - '.github/workflows/house-cross-platform-core.yml'
+  pull_request:
+    paths:
+      - 'house-commander-core/**'
+      - 'pom.xml'
+      - 'forge-gui-android/pom.xml'
+      - 'forge-gui-desktop/pom.xml'
+  workflow_dispatch:
+
+jobs:
+  shared-core:
+    name: Shared core - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Test HOUSE shared core
+        run: mvn -B -pl house-commander-core -am test -Dcheckstyle.skip=true
