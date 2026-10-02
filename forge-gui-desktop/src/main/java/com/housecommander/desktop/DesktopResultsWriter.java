@@ -171,8 +171,8 @@ public final class DesktopResultsWriter {
 
     private static String csv(String value) {
         String safe = value == null ? "" : value;
-        if (safe.contains(",") || safe.contains(""") || safe.contains("\n") || safe.contains("\r")) {
-            return """ + safe.replace(""", """") + """;
+        if (safe.contains(",") || safe.contains("\"") || safe.contains("\n") || safe.contains("\r")) {
+            return "\"" + safe.replace("\"", "\"\"") + "\"";
         }
         return safe;
     }
