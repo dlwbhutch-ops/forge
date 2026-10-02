@@ -1,0 +1,79 @@
+name: HOUSE Commander Lab Desktop
+
+on:
+  push:
+    branches:
+      - house-commander-lab-v05
+      - 'house-desktop-foundation-v09-*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout HOUSE branch
+        uses: actions/checkout@v4
+
+      - name: Bundle Forge rules resources for desktop
+        run: python3 .github/scripts/package-house-runtime.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Install Maven 3.8.1
+        run: |
+          curl -L -o apache-maven-3.8.1-bin.tar.gz \
+            https://archive.apache.org/dist/maven/maven-3/3.8.1/binaries/apache-maven-3.8.1-bin.tar.gz
+          tar xf apache-maven-3.8.1-bin.tar.gz
+          echo "$GITHUB_WORKSPACE/apache-maven-3.8.1/bin" >> "$GITHUB_PATH"
+
+      - name: Start virtual display
+        run: |
+          command -v Xvfb >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y xvfb; }
+          Xvfb :1 -screen 0 1280x800x24 >/tmp/house-xvfb.log 2>&1 &
+          echo "DISPLAY=:1" >> "$GITHUB_ENV"
+
+      - name: Build HOUSE desktop shell
+        run: |
+          export _JAVA_OPTIONS="-Xmx3g"
+          mvn -B -U -P windows-linux \
+            -pl forge-gui-desktop -am package \
+            -Dmaven.test.skip=true \
+            -Dcheckstyle.skip=true
+
+      - name: Run desktop HOUSE smoke gate
+        run: |
+          JAR="$(find forge-gui-desktop/target -maxdepth 1 -type f -name '*jar-with-dependencies.jar' | head -n 1)"
+          test -n "$JAR"
+          mkdir -p "$RUNNER_TEMP/house-home"
+          java -Xmx2g -Dfile.encoding=UTF-8 -Djava.awt.headless=true \
+            --add-opens=java.desktop/java.beans=ALL-UNNAMED --add-opens=java.desktop/javax.swing.border=ALL-UNNAMED --add-opens=java.desktop/javax.swing.event=ALL-UNNAMED --add-opens=java.desktop/sun.swing=ALL-UNNAMED --add-opens=java.desktop/java.awt.image=ALL-UNNAMED --add-opens=java.desktop/java.awt.color=ALL-UNNAMED --add-opens=java.desktop/sun.awt.image=ALL-UNNAMED --add-opens=java.desktop/javax.swing=ALL-UNNAMED --add-opens=java.desktop/java.awt=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED \
+            -Duser.home="$RUNNER_TEMP/house-home" \
+            -cp "$JAR" \
+            com.housecommander.desktop.HouseDesktopSmoke
+
+      - name: Package Mac and Windows portable build
+        run: |
+          JAR="$(find forge-gui-desktop/target -maxdepth 1 -type f -name '*jar-with-dependencies.jar' | head -n 1)"
+          test -n "$JAR"
+          rm -rf house-desktop-dist
+          mkdir -p house-desktop-dist/HOUSE-Commander-Lab-0.9
+          cp "$JAR" house-desktop-dist/HOUSE-Commander-Lab-0.9/HOUSE-Commander-Lab.jar
+          cp .github/house-desktop/HOUSE-Commander-Lab.command house-desktop-dist/HOUSE-Commander-Lab-0.9/
+          cp .github/house-desktop/HOUSE-Commander-Lab.cmd house-desktop-dist/HOUSE-Commander-Lab-0.9/
+          cp .github/house-desktop/README.txt house-desktop-dist/HOUSE-Commander-Lab-0.9/
+          chmod +x house-desktop-dist/HOUSE-Commander-Lab-0.9/HOUSE-Commander-Lab.command
+          cd house-desktop-dist
+          zip -r HOUSE-Commander-Lab-0.9-Mac-Windows.zip HOUSE-Commander-Lab-0.9
+
+      - name: Upload HOUSE desktop build
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-Desktop-0.9
+          path: house-desktop-dist/HOUSE-Commander-Lab-0.9-Mac-Windows.zip
+          if-no-files-found: error
