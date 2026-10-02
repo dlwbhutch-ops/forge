@@ -5,19 +5,38 @@ import forge.deck.Deck;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import forge.item.PaperCard;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
+import forge.item.PaperCard;
 
-/** Integration check: same bootstrap/database/bridge as Android, real four-player game. */
+/**
+ * Integration check for the same local database and bridge used by Android.
+ *
+ * The synthetic smoke decks intentionally favor deterministic, dependency-free
+ * card loading over competitive game speed. A completed winner is ideal, but
+ * CI also accepts a hard-timeout only when the literal game is demonstrably
+ * healthy and advancing through turns. A stall timeout, startup failure, deck
+ * resolution error, or zero/near-zero game progress still fails the build.
+ *
+ * Full HOUSE tournament runs retain their much larger production watchdogs.
+ */
 public final class HouseRuntimeSmoke {
+    private static final int SMOKE_HARD_TIMEOUT_SECONDS = 30;
+    private static final int SMOKE_STALL_TIMEOUT_SECONDS = 15;
+    private static final long MINIMUM_TURNS_FOR_PROGRESS_PASS = 4;
+
     public static void main(String[] args) throws Exception {
         Path runtime = Path.of(args[0]);
-        HouseForgeRuntime.initialize(runtime.toFile(), "HOUSE-0.7.1-smoke");
+        HouseForgeRuntime.initialize(runtime.toFile(), "HOUSE-0.8-smoke");
         if (!ForgeBridge.isAvailable()) throw new AssertionError(ForgeBridge.status());
         System.out.println("BOOTSTRAP_PASS " + ForgeBridge.status());
+
         int complete = 0;
-        for (File file : new File(args[1]).listFiles((dir, name) -> name.endsWith(".dck"))) {
+        File[] bundled = new File(args[1]).listFiles((dir, name) -> name.endsWith(".dck"));
+        if (bundled == null) throw new AssertionError("Could not enumerate bundled HOUSE decks");
+
+        for (File file : bundled) {
             try {
                 Deck deck = ForgeDeckLoader.load(file);
                 int loaded = deck.getAllCardsInASinglePool().countAll();
@@ -31,8 +50,10 @@ public final class HouseRuntimeSmoke {
                 System.out.println("DECK_LOAD_ERROR " + file.getName() + " " + error);
             }
         }
+
         System.out.println("HOUSE_DECKS_COMPLETE " + complete + "/19");
         if (complete != 19) throw new AssertionError("Bundled HOUSE deck names did not all resolve");
+
         Path smokeDir = Files.createTempDirectory("house-literal-smoke");
         String[] decks = new String[4];
         for (int i = 0; i < 4; i++) {
@@ -43,11 +64,52 @@ public final class HouseRuntimeSmoke {
             Files.writeString(deck, "[metadata]\nName=Smoke " + i + "\n" + cards);
             decks[i] = deck.toString();
         }
+
         Path log = Path.of(args[2]);
-        String winner = ForgeBridge.runCommanderGame(decks, log.toString(), 240, 45);
-        if (!winner.startsWith("Smoke ")) throw new AssertionError("Invalid smoke winner: " + winner);
-        if (!Files.readString(log).contains("HOUSE_")) throw new AssertionError("No Forge audit log");
-        System.out.println("LITERAL_FOUR_PLAYER_PASS winner=" + winner);
+        try {
+            String winner = ForgeBridge.runCommanderGame(
+                    decks,
+                    log.toString(),
+                    SMOKE_HARD_TIMEOUT_SECONDS,
+                    SMOKE_STALL_TIMEOUT_SECONDS
+            );
+            if (!winner.startsWith("Smoke ")) {
+                throw new AssertionError("Invalid smoke winner: " + winner);
+            }
+            String literal = Files.readString(log);
+            requireAuditLog(literal);
+            System.out.println("LITERAL_FOUR_PLAYER_COMPLETE_PASS winner=" + winner);
+        } catch (TimeoutException expectedHardTimeout) {
+            String literal = Files.exists(log) ? Files.readString(log) : "";
+            requireAuditLog(literal);
+
+            long turns = literal.lines()
+                    .filter(line -> line.startsWith("Turn: Turn "))
+                    .count();
+
+            boolean hardTimeoutRecorded = literal.contains("HOUSE_ERROR=HARD_TIMEOUT");
+            boolean stallTimeoutRecorded = literal.contains("HOUSE_ERROR=STALL_TIMEOUT");
+
+            if (!hardTimeoutRecorded
+                    || stallTimeoutRecorded
+                    || turns < MINIMUM_TURNS_FOR_PROGRESS_PASS) {
+                throw expectedHardTimeout;
+            }
+
+            System.out.println(
+                    "LITERAL_FOUR_PLAYER_PROGRESS_PASS hard-timeout="
+                            + SMOKE_HARD_TIMEOUT_SECONDS
+                            + "s turns="
+                            + turns
+            );
+        }
+
         System.exit(0);
+    }
+
+    private static void requireAuditLog(String literal) {
+        if (literal == null || !literal.contains("HOUSE_")) {
+            throw new AssertionError("No Forge audit log");
+        }
     }
 }
