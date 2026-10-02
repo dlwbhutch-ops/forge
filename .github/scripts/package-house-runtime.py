@@ -11,7 +11,7 @@ res = root / "forge-gui/res"
 out = root / "forge-gui-android/assets"
 out.mkdir(parents=True, exist_ok=True)
 build = os.environ.get("GITHUB_RUN_NUMBER", "local")
-version = f"HOUSE-0.7.1-b{build}"
+version = f"HOUSE-0.9.2-b{build}"
 
 def add(archive, name, data, compress=True):
     info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
