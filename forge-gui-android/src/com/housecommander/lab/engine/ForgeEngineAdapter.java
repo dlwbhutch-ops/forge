@@ -91,6 +91,27 @@ public final class ForgeEngineAdapter {
         }
     }
 
+    public String spectatorSnapshot() {
+        try {
+            Class<?> bridge = getBridgeClass();
+            Method method = bridge.getMethod("spectatorSnapshot");
+            Object value = method.invoke(null);
+            return value == null ? "No live match" : value.toString();
+        } catch (Throwable t) {
+            return "Spectator unavailable • " + safeMessage(rootCause(t));
+        }
+    }
+
+    public boolean spectatorActive() {
+        try {
+            Class<?> bridge = getBridgeClass();
+            Method method = bridge.getMethod("spectatorActive");
+            return Boolean.TRUE.equals(method.invoke(null));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     /**
      * Execute one literal Forge multiplayer Commander game.
      *
