@@ -11,6 +11,7 @@ public final class RunState {
     public long totalGames = 0;
     public boolean pauseRequested = false;
     public String lastMessage = "Ready";
+    public String rosterKey = "";
     public final Map<String, Integer> wins = new LinkedHashMap<>();
     public final Map<String, Integer> games = new LinkedHashMap<>();
 
