@@ -43,8 +43,7 @@ jobs:
           export _JAVA_OPTIONS="-Xmx3g"
           mvn -B -U \
             -pl forge-gui-desktop -am package \
-            -Dmaven.test.skip=true \
-            -Dcheckstyle.skip=true
+            -Dmaven.test.skip=true
 
       - name: Run desktop HOUSE smoke gate
         run: |
