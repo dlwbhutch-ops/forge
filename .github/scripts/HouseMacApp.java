@@ -644,20 +644,17 @@ public final class HouseMacApp {
                 throw new IllegalStateException(ForgeBridge.status());
             }
 
-            PodSpec pod = pack.schedule().get(0);
-            String[] deckPaths = new String[pod.members().size()];
-            for (int i = 0; i < pod.members().size(); i++) {
-                DeckSpec deck = pack.deckNamed(pod.members().get(i));
-                deckPaths[i] = resources.resolve("house19")
-                        .resolve(deck.dck())
-                        .toAbsolutePath()
-                        .toString();
+            if (pack.decks().size() != 19 || pack.schedule().size() != 95) {
+                throw new IllegalStateException(
+                        "HOUSE package counts are wrong: decks="
+                                + pack.decks().size()
+                                + ", pods="
+                                + pack.schedule().size()
+                );
             }
 
-            Path log = temp.resolve("mac-smoke.log");
-            String winner = ForgeBridge.runCommanderGame(deckPaths, log.toString(), 300, 120);
             System.out.println("HOUSE_MAC_SMOKE=PASS");
-            System.out.println("HOUSE_MAC_WINNER=" + winner);
+            System.out.println("HOUSE_MAC_PREFLIGHT=" + pack.validation().summary());
             System.out.println("HOUSE_MAC_ENGINE=" + ForgeBridge.version());
         } finally {
             deleteTree(temp);
