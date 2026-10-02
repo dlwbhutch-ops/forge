@@ -39,6 +39,7 @@ public final class StateStore {
             s.totalGames = Math.max(0L, prefs.getLong("totalGames", 0L));
             s.pauseRequested = prefs.getBoolean(KEY_PAUSE, false);
             s.lastMessage = nonBlank(prefs.getString("lastMessage", "Ready"), "Ready");
+            s.rosterKey = prefs.getString("rosterKey", "");
 
             decodeMap(prefs.getString("wins", ""), s.wins);
             decodeMap(prefs.getString("games", ""), s.games);
@@ -67,6 +68,7 @@ public final class StateStore {
                     .putInt("nextPodIndex", Math.max(0, s.nextPodIndex))
                     .putLong("totalGames", Math.max(0L, s.totalGames))
                     .putString("lastMessage", nonBlank(s.lastMessage, "Ready"))
+                    .putString("rosterKey", s.rosterKey == null ? "" : s.rosterKey)
                     .putString("wins", encodeMap(s.wins))
                     .putString("games", encodeMap(s.games));
             commitOrThrow(editor, "save tournament checkpoint");
