@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - house-commander-lab-v05
+      - house-commander-lab-v09-playground
   workflow_dispatch:
 
 jobs:
