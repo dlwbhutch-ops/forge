@@ -13,11 +13,10 @@ import android.os.PowerManager;
 
 import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
-import com.housecommander.core.HousePackageLoader;
+import com.housecommander.core.RosterBuilder;
 import com.housecommander.core.Names;
 import com.housecommander.core.PodSpec;
-import com.housecommander.lab.AndroidAssets;
-import com.housecommander.lab.HouseInstall;
+import com.housecommander.lab.HouseRuntime;
 import com.housecommander.lab.MainActivity;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.engine.GameOutcome;
@@ -136,8 +135,7 @@ public final class TournamentService extends Service {
             state.lastMessage = "Running one literal Forge test game";
             store.save(state);
 
-            HousePackage pack = HousePackageLoader.load(AndroidAssets.from(this), "house19");
-            HouseInstall.ensureDeckFiles(this, pack);
+            HousePackage pack = HouseRuntime.loadActivePackage(this);
 
             if (pack.schedule() == null || pack.schedule().isEmpty()) {
                 throw new IllegalStateException("HOUSE schedule contains no pods");
@@ -181,20 +179,20 @@ public final class TournamentService extends Service {
         RunState state = store.load();
 
         try {
-            HousePackage pack = HousePackageLoader.load(AndroidAssets.from(this), "house19");
-            HouseInstall.ensureDeckFiles(this, pack);
+            HousePackage pack = HouseRuntime.loadActivePackage(this);
 
             if (pack.schedule() == null || pack.schedule().isEmpty()) {
                 throw new IllegalStateException("HOUSE schedule contains no pods");
             }
             final int podCount = pack.schedule().size();
+            final String rosterKey = RosterBuilder.fingerprint(pack.decks());
 
             ForgeEngineAdapter engine = new ForgeEngineAdapter(this);
             if (!engine.isAvailable()) {
                 throw new IllegalStateException(engine.status());
             }
 
-            state = prepareRunState(store, state, requestedGauntlets, podCount);
+            state = prepareRunState(store, state, requestedGauntlets, podCount, rosterKey);
 
             /*
              * A completed run is never silently reset by pressing Run again.
@@ -362,13 +360,26 @@ public final class TournamentService extends Service {
             StateStore store,
             RunState state,
             int requestedGauntlets,
-            int podCount
+            int podCount,
+            String rosterKey
     ) {
         validateCheckpoint(state, podCount);
 
         boolean hasProgress = state.totalGames > 0L
                 || state.completedGauntlets() > 0
                 || state.nextPodIndex > 0;
+
+        String savedRosterKey = state.rosterKey == null ? "" : state.rosterKey.trim();
+        if (hasProgress && !savedRosterKey.isEmpty() && !savedRosterKey.equals(rosterKey)) {
+            throw new IllegalStateException(
+                    "Active tournament roster differs from the saved checkpoint. "
+                            + "Restore the prior roster or explicitly reset the tournament before continuing."
+            );
+        }
+        if (hasProgress && savedRosterKey.isEmpty()) {
+            state.rosterKey = rosterKey;
+            store.save(state);
+        }
 
         if (!hasProgress || state.targetGauntlets <= 0) {
             File existingResults = ResultsWriter.resultsFile(this);
@@ -380,7 +391,7 @@ public final class TournamentService extends Service {
                 );
             }
 
-            RunState fresh = freshRun(requestedGauntlets);
+            RunState fresh = freshRun(requestedGauntlets, rosterKey);
             store.clearPauseRequest();
             return fresh;
         }
@@ -431,9 +442,10 @@ public final class TournamentService extends Service {
         }
     }
 
-    private static RunState freshRun(int target) {
+    private static RunState freshRun(int target, String rosterKey) {
         RunState state = new RunState();
         state.status = "RUNNING";
+        state.rosterKey = rosterKey == null ? "" : rosterKey;
         state.targetGauntlets = Math.max(1, target);
         state.currentGauntlet = 1;
         state.nextPodIndex = 0;
@@ -472,6 +484,9 @@ public final class TournamentService extends Service {
         String canonicalWinner = Names.canonical(winner);
         for (DeckSpec d : decks) {
             if (Names.canonical(d.deck()).equals(canonicalWinner)) {
+                return d.deck();
+            }
+            if (Names.canonical(d.engineName()).equals(canonicalWinner)) {
                 return d.deck();
             }
 
