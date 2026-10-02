@@ -38,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
@@ -50,6 +51,7 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -63,7 +65,9 @@ import java.util.zip.ZipInputStream;
  */
 public final class HouseMacApp {
     private static final String APP_VERSION = "0.9.2-endurance";
-    private static final int STALL_TIMEOUT_SECONDS = 5 * 60;
+    private static final int TRUE_STALL_TIMEOUT_SECONDS = 5 * 60;
+    private static final int CPU_BUSY_NO_EVENT_CEILING_SECONDS = 30 * 60;
+    private static final int WORKER_INTERNAL_TIMEOUT_SECONDS = Integer.MAX_VALUE - 1;
     private static final int MAX_AUTOMATIC_ATTEMPTS = 3;
     private static final int SPECTATOR_REFRESH_MS = 1500;
     private static final String CHECKPOINT_FILE = "house-gauntlet-checkpoint.properties";
@@ -644,7 +648,7 @@ public final class HouseMacApp {
         command.add(resultFile.toString());
         command.add(snapshotFile.toString());
         command.add(gameLog.toString());
-        command.add(String.valueOf(STALL_TIMEOUT_SECONDS));
+        command.add(String.valueOf(WORKER_INTERNAL_TIMEOUT_SECONDS));
         Collections.addAll(command, deckPaths);
 
         SwingUtilities.invokeLater(() ->
@@ -665,7 +669,7 @@ public final class HouseMacApp {
 
         int exit;
         try {
-            exit = process.waitFor();
+            exit = waitForWorkerWithProgressWatch(process, snapshotFile);
         } catch (InterruptedException interrupted) {
             process.destroyForcibly();
             Thread.currentThread().interrupt();
@@ -710,6 +714,79 @@ public final class HouseMacApp {
                         + " • worker diagnostics: "
                         + workerLog
         );
+    }
+
+    private int waitForWorkerWithProgressWatch(Process process, Path snapshotFile)
+            throws Exception {
+        long lastGameProgressMs = System.currentTimeMillis();
+        long lastCpuAdvanceMs = lastGameProgressMs;
+        String lastSnapshot = "";
+        Duration lastCpu = process.toHandle()
+                .info()
+                .totalCpuDuration()
+                .orElse(Duration.ZERO);
+
+        while (true) {
+            if (process.waitFor(2L, TimeUnit.SECONDS)) {
+                return process.exitValue();
+            }
+
+            long now = System.currentTimeMillis();
+
+            if (Files.isRegularFile(snapshotFile)) {
+                try {
+                    String current = Files.readString(snapshotFile, StandardCharsets.UTF_8);
+                    if (!current.equals(lastSnapshot)) {
+                        lastSnapshot = current;
+                        lastGameProgressMs = now;
+                    }
+                } catch (IOException ignored) {
+                    // The spectator file is written atomically; a transient read miss is harmless.
+                }
+            }
+
+            Duration currentCpu = process.toHandle()
+                    .info()
+                    .totalCpuDuration()
+                    .orElse(lastCpu);
+            if (currentCpu.compareTo(lastCpu) > 0) {
+                lastCpuAdvanceMs = now;
+                lastCpu = currentCpu;
+            }
+
+            long noGameProgressMs = now - lastGameProgressMs;
+            long noCpuProgressMs = now - lastCpuAdvanceMs;
+
+            if (noGameProgressMs >= TRUE_STALL_TIMEOUT_SECONDS * 1000L
+                    && noCpuProgressMs >= 30_000L) {
+                process.destroyForcibly();
+                process.waitFor(10L, TimeUnit.SECONDS);
+                throw new IOException(
+                        "Forge worker made no game progress for "
+                                + TRUE_STALL_TIMEOUT_SECONDS
+                                + " seconds and CPU activity stopped; isolated worker was terminated"
+                );
+            }
+
+            if (noGameProgressMs >= CPU_BUSY_NO_EVENT_CEILING_SECONDS * 1000L) {
+                process.destroyForcibly();
+                process.waitFor(10L, TimeUnit.SECONDS);
+                throw new IOException(
+                        "Forge worker stayed CPU-busy without a game event for "
+                                + CPU_BUSY_NO_EVENT_CEILING_SECONDS
+                                + " seconds; treated as a computational stall and queued for retry"
+                );
+            }
+
+            if (noGameProgressMs >= TRUE_STALL_TIMEOUT_SECONDS * 1000L
+                    && noCpuProgressMs < 30_000L) {
+                SwingUtilities.invokeLater(() ->
+                        setRunStatus(
+                                "Large board calculation still using CPU • waiting for Forge to finish "
+                                        + "without altering tokens or card effects"
+                        ));
+            }
+        }
     }
 
     private String[] deckPaths(PodSpec pod) throws IOException {
@@ -1155,7 +1232,10 @@ public final class HouseMacApp {
             System.out.println("HOUSE_MAC_SMOKE=PASS");
             System.out.println("HOUSE_MAC_PREFLIGHT=" + pack.validation().summary());
             System.out.println("HOUSE_MAC_ENGINE=" + ForgeBridge.version());
-            System.out.println("HOUSE_MAC_ENDURANCE=isolated-workers,checkpoint,retry,5m-stall");
+            System.out.println(
+                    "HOUSE_MAC_ENDURANCE=isolated-workers,checkpoint,retry,"
+                            + "5m-idle-stall,30m-cpu-busy-grace"
+            );
         } finally {
             deleteTree(temp);
         }
