@@ -41,7 +41,7 @@ jobs:
       - name: Build HOUSE desktop shell
         run: |
           export _JAVA_OPTIONS="-Xmx3g"
-          mvn -B -U -P windows-linux \
+          mvn -B -U \
             -pl forge-gui-desktop -am package \
             -Dmaven.test.skip=true \
             -Dcheckstyle.skip=true
