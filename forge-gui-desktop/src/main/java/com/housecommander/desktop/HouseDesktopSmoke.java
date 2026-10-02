@@ -7,7 +7,6 @@ import com.housecommander.forgebridge.ForgeBridge;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 public final class HouseDesktopSmoke {
