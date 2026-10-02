@@ -95,7 +95,7 @@ jobs:
           echo "===== SIGNED APK ====="
           find forge-gui-android/target -maxdepth 1 -type f -name '*debugSigned*.apk' -print
 
-      - name: Verify Forge database startup and one literal four-player game
+      - name: Verify Forge database startup and literal four-player progress
         run: bash .github/scripts/smoke-house-runtime.sh
 
       - name: Upload HOUSE runtime diagnostics
