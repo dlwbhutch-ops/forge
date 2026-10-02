@@ -174,3 +174,72 @@ jobs:
           name: HOUSE-Commander-Lab-macOS
           path: dist/HOUSE-Commander-Lab-macOS-0.9.0.zip
           if-no-files-found: error
+
+
+  mac-verify:
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+      - name: Set up JDK 17 on macOS
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download assembled HOUSE Mac app
+        uses: actions/download-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-macOS
+          path: incoming
+
+      - name: Unpack and validate app bundle on macOS
+        run: |
+          set -euo pipefail
+          mkdir -p verified
+          unzip -q incoming/HOUSE-Commander-Lab-macOS-0.9.0.zip -d verified
+          APP="verified/HOUSE Commander Lab.app"
+          RES="$APP/Contents/Resources"
+
+          plutil -lint "$APP/Contents/Info.plist"
+          test -x "$APP/Contents/MacOS/HouseCommanderLab"
+
+          java -Xmx1024m \
+            -Djava.awt.headless=true \
+            -Dhouse.resources="$RES" \
+            -cp "$RES/house-mac-launcher.jar:$RES/house-forge-all.jar" \
+            com.housecommander.mac.HouseMacApp --smoke \
+            | tee house-mac-native-smoke.log
+
+          grep -q 'HOUSE_MAC_SMOKE=PASS' house-mac-native-smoke.log
+
+      - name: Ad-hoc sign and verify Mac app
+        run: |
+          set -euo pipefail
+          APP="verified/HOUSE Commander Lab.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Package macOS-verified app
+        run: |
+          set -euo pipefail
+          cd verified
+          ditto -c -k --sequesterRsrc --keepParent \
+            "HOUSE Commander Lab.app" \
+            "HOUSE-Commander-Lab-macOS-0.9.0-verified.zip"
+          ls -lh "HOUSE-Commander-Lab-macOS-0.9.0-verified.zip"
+
+      - name: Upload macOS-verified HOUSE app
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-macOS-verified
+          path: verified/HOUSE-Commander-Lab-macOS-0.9.0-verified.zip
+          if-no-files-found: error
+
+      - name: Upload native Mac verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-macOS-native-verification
+          path: house-mac-native-smoke.log
+          if-no-files-found: ignore
