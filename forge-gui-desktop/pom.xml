@@ -66,6 +66,19 @@
                             <goal>parse-version</goal>
                         </goals>
                     </execution>
+                    <execution>
+                        <id>house-shared-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.basedir}/../forge-gui-android/src/com/housecommander/core</source>
+                                <source>${project.basedir}/../forge-gui-android/src/com/housecommander/forgebridge</source>
+                            </sources>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
@@ -293,6 +306,16 @@ try {
             <resource>
                 <directory>filters</directory>
                 <filtering>true</filtering>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/../forge-gui-android/assets</directory>
+                <targetPath>housecommander</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>house19/**</include>
+                    <include>house-forge-runtime.id</include>
+                    <include>house-forge-runtime.zip</include>
+                </includes>
             </resource>
         </resources>
     </build>
