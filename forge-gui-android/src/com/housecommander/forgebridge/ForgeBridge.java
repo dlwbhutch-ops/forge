@@ -118,6 +118,14 @@ public final class ForgeBridge {
                 + HOUSE_BRIDGE_VERSION;
     }
 
+    public static String spectatorSnapshot() {
+        return HouseSpectatorState.snapshot();
+    }
+
+    public static boolean spectatorActive() {
+        return HouseSpectatorState.isActive();
+    }
+
     /**
      * Legacy bridge-0.6 ABI retained so an older adapter fails safely rather
      * than with NoSuchMethodException. It now uses a three-minute stall guard.
@@ -169,7 +177,8 @@ public final class ForgeBridge {
         );
         final Game game = match.createGame();
         final long startedNs = System.nanoTime();
-        final ProgressHeartbeat heartbeat = new ProgressHeartbeat(startedNs);
+        final ProgressHeartbeat heartbeat = new ProgressHeartbeat(game, startedNs);
+        HouseSpectatorState.begin(game);
         game.subscribeToEvents(heartbeat);
 
         final ExecutorService executor = Executors.newSingleThreadExecutor(
@@ -363,6 +372,7 @@ public final class ForgeBridge {
                 .getWinningLobbyPlayer()
                 .getName()
                 .trim();
+        HouseSpectatorState.complete(game, winner);
         return winner;
     }
 
@@ -703,11 +713,13 @@ public final class ForgeBridge {
     }
 
     private static final class ProgressHeartbeat {
+        private final Game game;
         private final AtomicLong lastActivityNs;
         private final AtomicLong eventCount = new AtomicLong(0L);
         private volatile String lastEvent = "<none>";
 
-        private ProgressHeartbeat(long startedNs) {
+        private ProgressHeartbeat(Game game, long startedNs) {
+            this.game = game;
             this.lastActivityNs = new AtomicLong(startedNs);
         }
 
@@ -716,8 +728,9 @@ public final class ForgeBridge {
             lastEvent = event == null
                     ? "<null>"
                     : event.getClass().getSimpleName();
-            eventCount.incrementAndGet();
+            long count = eventCount.incrementAndGet();
             lastActivityNs.set(System.nanoTime());
+            HouseSpectatorState.onEvent(game, lastEvent, count);
         }
 
         private long lastActivityNs() {
