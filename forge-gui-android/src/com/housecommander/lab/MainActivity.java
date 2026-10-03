@@ -19,6 +19,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.housecommander.core.HousePackage;
+import com.housecommander.forgebridge.ForgeBridge;
+import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
@@ -55,6 +57,8 @@ public final class MainActivity extends Activity {
     private Button watchButton;
     private Button playButton;
     private TextView watchStatus;
+    private LinearLayout watchBoard;
+    private TextView watchStack;
     private TextView watchDetails;
     private DeckLibraryController libraryController;
 
@@ -139,7 +143,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.12 • Unified Lab • Decks + Tournament + Watch + Play\n"
+                "Bridge 0.13 • Live Battlefield • Unified HOUSE Lab\n"
                         + installedVersion,
                 14,
                 false
@@ -289,14 +293,28 @@ public final class MainActivity extends Activity {
         });
         root.addView(watchButton);
 
-        watchStatus = text("Spectator feed ready", 16, true);
+        watchStatus = text("Spectator board ready", 16, true);
         watchStatus.setPadding(0, dp(8), 0, dp(6));
         root.addView(watchStatus);
 
+        watchBoard = new LinearLayout(this);
+        watchBoard.setOrientation(LinearLayout.VERTICAL);
+        watchBoard.setPadding(0, dp(4), 0, dp(8));
+        root.addView(watchBoard);
+
+        watchStack = text("Stack empty", 12, false);
+        watchStack.setTypeface(Typeface.MONOSPACE);
+        watchStack.setTextIsSelectable(true);
+        watchStack.setPadding(0, dp(6), 0, dp(8));
+        root.addView(watchStack);
+
+        TextView logLabel = text("Forge event log", 12, true);
+        root.addView(logLabel);
+
         watchDetails = text(
-                "Run a literal test game to stream Forge's event log here. "
-                        + "The graphical battlefield will replace this feed without changing apps.",
-                12,
+                "Run & watch a literal Forge game. The battlefield, public zones, "
+                        + "turn/phase, and stack will render above.",
+                11,
                 false
         );
         watchDetails.setTypeface(Typeface.MONOSPACE);
@@ -512,16 +530,55 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshWatchView() {
-        if (watchStatus == null || watchDetails == null) {
+        if (watchStatus == null || watchDetails == null || watchBoard == null) {
             return;
         }
-        RunState state = new StateStore(this).load();
-        if ("TESTING".equals(state.status)) {
-            watchStatus.setText("LIVE • literal Forge game in progress");
-        } else if ("TEST_COMPLETE".equals(state.status)) {
-            watchStatus.setText(state.lastMessage);
+
+        RunState run = new StateStore(this).load();
+        LiveGameState live = ForgeBridge.liveGameState();
+
+        if (live.sequence() > 1L) {
+            String winner = live.winner().isEmpty() ? "" : " • winner " + live.winner();
+            watchStatus.setText(
+                    "Turn " + live.turn()
+                            + " • " + live.phase()
+                            + (live.activePlayer().isEmpty()
+                            ? ""
+                            : " • active " + live.activePlayer())
+                            + " • " + live.lastEvent()
+                            + winner
+            );
+        } else if ("TESTING".equals(run.status)) {
+            watchStatus.setText("LIVE • Forge is starting the literal game");
         } else {
-            watchStatus.setText("Spectator feed ready");
+            watchStatus.setText("Spectator board ready");
+        }
+
+        watchBoard.removeAllViews();
+        if (live.players().isEmpty()) {
+            TextView waiting = text(
+                    "Run & watch a literal Forge game. The four-player battlefield "
+                            + "will appear here.",
+                    13,
+                    false
+            );
+            waiting.setPadding(0, dp(8), 0, dp(12));
+            watchBoard.addView(waiting);
+        } else {
+            for (LiveGameState.PlayerState player : live.players()) {
+                watchBoard.addView(buildPlayerBoard(player, live.activePlayer()));
+            }
+        }
+
+        if (live.stack().isEmpty()) {
+            watchStack.setText("STACK • empty");
+        } else {
+            StringBuilder stackText = new StringBuilder("STACK\n");
+            int index = 1;
+            for (String item : live.stack()) {
+                stackText.append(index++).append(". ").append(item).append("\n");
+            }
+            watchStack.setText(stackText.toString());
         }
 
         File testDir = new File(getFilesDir(), "logs/test");
@@ -546,6 +603,109 @@ public final class MainActivity extends Activity {
         } catch (Throwable ignored) {
             // Forge can be writing this file during the refresh; retry next tick.
         }
+    }
+
+    private View buildPlayerBoard(
+            LiveGameState.PlayerState player,
+            String activePlayer
+    ) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(10), dp(8), dp(10), dp(10));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(5), 0, dp(5));
+        panel.setLayoutParams(params);
+
+        boolean active = player.name().equals(activePlayer);
+        String status = player.lost() ? " • OUT" : (active ? " • ACTIVE" : "");
+        TextView header = text(
+                player.name()
+                        + status
+                        + "   ♥ "
+                        + player.life()
+                        + "   ☠ "
+                        + player.poison(),
+                15,
+                true
+        );
+        panel.addView(header);
+
+        TextView counts = text(
+                "Hand " + player.handCount()
+                        + " • Library " + player.libraryCount()
+                        + " • Battlefield " + player.battlefield().size(),
+                12,
+                false
+        );
+        counts.setAlpha(0.8f);
+        panel.addView(counts);
+
+        TextView battlefield = text(
+                formatBattlefield(player.battlefield()),
+                12,
+                false
+        );
+        battlefield.setTypeface(Typeface.MONOSPACE);
+        battlefield.setPadding(0, dp(5), 0, dp(5));
+        panel.addView(battlefield);
+
+        TextView zones = text(
+                "Command: " + zoneSummary(player.command(), 4)
+                        + "\nGraveyard (" + player.graveyard().size() + "): "
+                        + zoneSummary(player.graveyard(), 5)
+                        + "\nExile (" + player.exile().size() + "): "
+                        + zoneSummary(player.exile(), 5),
+                11,
+                false
+        );
+        zones.setTypeface(Typeface.MONOSPACE);
+        zones.setAlpha(0.85f);
+        panel.addView(zones);
+
+        return panel;
+    }
+
+    private static String formatBattlefield(List<LiveGameState.CardState> cards) {
+        if (cards == null || cards.isEmpty()) {
+            return "BATTLEFIELD • empty";
+        }
+
+        StringBuilder out = new StringBuilder("BATTLEFIELD\n");
+        for (LiveGameState.CardState card : cards) {
+            out.append(card.tapped() ? "↷ " : "• ")
+                    .append(card.name());
+            if (card.creature()) {
+                out.append("  ").append(card.power()).append("/")
+                        .append(card.toughness());
+            }
+            if (card.token()) {
+                out.append(" [token]");
+            }
+            out.append("\n");
+        }
+        return out.toString();
+    }
+
+    private static String zoneSummary(List<String> cards, int limit) {
+        if (cards == null || cards.isEmpty()) {
+            return "—";
+        }
+        StringBuilder out = new StringBuilder();
+        int start = Math.max(0, cards.size() - Math.max(1, limit));
+        for (int i = start; i < cards.size(); i++) {
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append(cards.get(i));
+        }
+        if (start > 0) {
+            out.insert(0, "… ");
+        }
+        return out.toString();
     }
 
     private static File newestLog(File directory) {
