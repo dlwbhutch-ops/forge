@@ -131,7 +131,7 @@ public final class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException error) {
             installedVersion = "unknown build";
         }
-        TextView version = text("Bridge 0.10 • Deck Details + Version Management\n" + installedVersion, 14, false);
+        TextView version = text("Bridge 0.11 • ManaBox + Plain-Text Import\n" + installedVersion, 14, false);
         version.setAlpha(0.75f);
         root.addView(version);
 
@@ -169,7 +169,7 @@ public final class MainActivity extends Activity {
         libraryStatus = text("Loading deck library…", 16, true);
         root.addView(libraryStatus);
 
-        importButton = button("Import Forge .dck deck");
+        importButton = button("Import .dck / ManaBox .txt deck");
         importButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
