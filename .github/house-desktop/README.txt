@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.12 Unified App
+HOUSE Commander Lab 0.13 Live Battlefield
 
 Requires Java 17 or newer.
 
@@ -35,3 +35,10 @@ the text into a Forge .dck and keeps the same version-management safeguards.
 application shell on desktop and Android. Watch uses the same literal Forge engine
 and streams the test-game event log in-app. Play is reserved in the same shell for
 the upcoming human-seat decision bridge; it will not require a second application.
+
+
+0.13 adds immutable live Forge game-state snapshots and renders a four-player
+spectator battlefield inside the same HOUSE app. The Watch view shows turn/phase,
+active player, life/poison, hand/library counts, public zones, battlefield
+permanents, tap/token/P-T state, and the live stack while retaining the raw Forge
+event log for diagnostics. The UI never reads the mutable Forge game directly.
