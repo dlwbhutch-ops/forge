@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.9 Desktop Foundation
+HOUSE Commander Lab 0.10 Deck Management
 
 Requires Java 17 or newer.
 
@@ -22,3 +22,6 @@ mathematically identical to the Android version.
 
 The desktop shell uses the same HOUSE core deck/roster classes and the same
 literal Forge bridge/watchdog source as Android.
+
+0.10 adds exact 100-card deck viewing, imported-deck replacement, archived
+version history with restore, and safe imported-deck removal.
