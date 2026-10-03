@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.11 ManaBox / Text Import
+HOUSE Commander Lab 0.12 Unified App
 
 Requires Java 17 or newer.
 
@@ -29,3 +29,9 @@ version history with restore, and safe imported-deck removal.
 0.11 accepts Forge .dck, ManaBox text exports, and simple 100-card text lists.
 For a plain list with no headings, place the commander first. HOUSE converts
 the text into a Forge .dck and keeps the same version-management safeguards.
+
+
+0.12 combines Decks, Tournament, Results, Watch, and Play into one HOUSE
+application shell on desktop and Android. Watch uses the same literal Forge engine
+and streams the test-game event log in-app. Play is reserved in the same shell for
+the upcoming human-seat decision bridge; it will not require a second application.
