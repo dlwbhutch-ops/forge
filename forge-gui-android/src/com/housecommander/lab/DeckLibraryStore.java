@@ -9,6 +9,7 @@ import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.Names;
 import com.housecommander.core.RosterBuilder;
+import com.housecommander.core.TextDeckImport;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -140,7 +141,11 @@ public final class DeckLibraryStore {
 
         long stamp = System.currentTimeMillis();
         File incoming = new File(dir, ".incoming_" + stamp + ".dck");
-        copyInput(input, incoming);
+        byte[] normalized = TextDeckImport.normalizeToForgeDck(
+                input,
+                fileStem(originalName)
+        );
+        writeBytes(normalized, incoming);
 
         DeckFileSnapshot snapshot;
         try {
@@ -220,7 +225,11 @@ public final class DeckLibraryStore {
 
         long stamp = System.currentTimeMillis();
         File incoming = new File(dir, ".replacement_" + stamp + ".dck");
-        copyInput(input, incoming);
+        byte[] normalized = TextDeckImport.normalizeToForgeDck(
+                input,
+                fileStem(originalName)
+        );
+        writeBytes(normalized, incoming);
 
         DeckFileSnapshot replacement;
         try {
@@ -652,6 +661,17 @@ public final class DeckLibraryStore {
     private static void ensureDirectory(File dir) throws IOException {
         if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
             throw new IOException("Could not create directory: " + dir.getAbsolutePath());
+        }
+    }
+
+    private static void writeBytes(byte[] bytes, File destination) throws IOException {
+        File parent = destination.getParentFile();
+        if (parent != null) {
+            ensureDirectory(parent);
+        }
+        try (FileOutputStream out = new FileOutputStream(destination, false)) {
+            out.write(bytes);
+            out.getFD().sync();
         }
     }
 
