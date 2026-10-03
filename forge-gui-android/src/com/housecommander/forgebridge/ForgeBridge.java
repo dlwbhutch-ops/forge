@@ -17,10 +17,13 @@ import forge.game.GameLogEntry;
 import forge.game.GameRules;
 import forge.game.GameType;
 import forge.game.Match;
+import forge.game.card.Card;
 import forge.game.event.Event;
 import forge.game.phase.PhaseHandler;
+import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.player.Player;
 import forge.game.player.RegisteredPlayer;
+import forge.game.zone.ZoneType;
 import forge.item.PaperCard;
 import forge.model.FModel;
 import forge.player.GamePlayerUtil;
@@ -72,6 +75,7 @@ public final class ForgeBridge {
      */
     private static final AtomicBoolean ENGINE_POISONED = new AtomicBoolean(false);
     private static volatile String poisonReason = "";
+    private static volatile LiveGameState liveGameState = LiveGameState.idle();
 
     private ForgeBridge() {
     }
@@ -109,6 +113,10 @@ public final class ForgeBridge {
         } catch (Throwable t) {
             return "unavailable — " + safeMessage(t);
         }
+    }
+
+    public static LiveGameState liveGameState() {
+        return liveGameState;
     }
 
     public static String version() {
@@ -234,9 +242,12 @@ public final class ForgeBridge {
                 "HOUSE Commander Lab"
         );
         final Game game = match.createGame();
+        liveGameState = LiveGameState.starting();
         final long startedNs = System.nanoTime();
         final ProgressHeartbeat heartbeat = new ProgressHeartbeat(startedNs);
+        final LiveStateRecorder liveRecorder = new LiveStateRecorder(game);
         game.subscribeToEvents(heartbeat);
+        game.subscribeToEvents(liveRecorder);
 
         final ExecutorService executor = Executors.newSingleThreadExecutor(
                 new ThreadFactory() {
@@ -424,6 +435,7 @@ public final class ForgeBridge {
                 stallTimeoutSeconds,
                 heartbeat
         );
+        liveRecorder.publish("GAME_COMPLETE", true);
 
         String winner = game.getOutcome()
                 .getWinningLobbyPlayer()
@@ -765,6 +777,180 @@ public final class ForgeBridge {
             );
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    private static LiveGameState captureLiveState(
+            Game game,
+            long sequence,
+            String lastEvent
+    ) {
+        if (game == null) {
+            return LiveGameState.idle();
+        }
+
+        int turn = 0;
+        String phase = "";
+        String activePlayer = "";
+        PhaseHandler phaseHandler = game.getPhaseHandler();
+        if (phaseHandler != null) {
+            turn = Math.max(0, phaseHandler.getTurn());
+            Object phaseValue = phaseHandler.getPhase();
+            phase = phaseValue == null ? "" : String.valueOf(phaseValue);
+            Player active = phaseHandler.getPlayerTurn();
+            if (active != null) {
+                activePlayer = safeText(active.getName());
+            }
+        }
+
+        List<LiveGameState.PlayerState> playerStates =
+                new ArrayList<LiveGameState.PlayerState>();
+        for (Player player : game.getPlayers()) {
+            List<LiveGameState.CardState> battlefield =
+                    new ArrayList<LiveGameState.CardState>();
+            for (Card card : player.getCardsIn(ZoneType.Battlefield)) {
+                String displayName = card.isFaceDown()
+                        ? "Face-down permanent"
+                        : safeText(card.getName());
+                boolean creature = card.isCreature();
+                battlefield.add(new LiveGameState.CardState(
+                        displayName,
+                        card.isTapped(),
+                        card.isToken(),
+                        card.isFaceDown(),
+                        creature,
+                        card.isLand(),
+                        creature ? card.getNetPower() : 0,
+                        creature ? card.getNetToughness() : 0
+                ));
+            }
+
+            playerStates.add(new LiveGameState.PlayerState(
+                    safeText(player.getName()),
+                    player.getLife(),
+                    player.getPoisonCounters(),
+                    player.getCardsIn(ZoneType.Hand).size(),
+                    player.getCardsIn(ZoneType.Library).size(),
+                    player.hasLost(),
+                    battlefield,
+                    cardNames(player.getCardsIn(ZoneType.Command)),
+                    cardNames(player.getCardsIn(ZoneType.Graveyard)),
+                    cardNames(player.getCardsIn(ZoneType.Exile))
+            ));
+        }
+
+        List<String> stack = new ArrayList<String>();
+        for (SpellAbilityStackInstance instance : game.getStack()) {
+            String description = instance == null
+                    ? ""
+                    : safeText(instance.getStackDescription());
+            if (description.isEmpty() && instance != null && instance.getSourceCard() != null) {
+                description = safeText(instance.getSourceCard().getName());
+            }
+            if (!description.isEmpty()) {
+                stack.add(description);
+            }
+        }
+
+        String winner = "";
+        if (game.getOutcome() != null
+                && !game.getOutcome().isDraw()
+                && game.getOutcome().getWinningLobbyPlayer() != null) {
+            winner = safeText(game.getOutcome().getWinningLobbyPlayer().getName());
+        }
+
+        return new LiveGameState(
+                sequence,
+                lastEvent,
+                turn,
+                phase,
+                activePlayer,
+                playerStates,
+                stack,
+                game.isGameOver(),
+                winner
+        );
+    }
+
+    private static List<String> cardNames(Iterable<Card> cards) {
+        List<String> out = new ArrayList<String>();
+        if (cards == null) {
+            return out;
+        }
+        for (Card card : cards) {
+            if (card == null) {
+                continue;
+            }
+            out.add(card.isFaceDown() ? "Face-down card" : safeText(card.getName()));
+        }
+        return out;
+    }
+
+    private static String safeText(String value) {
+        return value == null ? "" : sanitize(value);
+    }
+
+    /**
+     * Captures immutable UI state only while Forge is already on its own game
+     * event thread. This avoids racing the mutable engine from Swing/Android.
+     */
+    private static final class LiveStateRecorder {
+        private static final long MIN_CAPTURE_NS = TimeUnit.MILLISECONDS.toNanos(75L);
+
+        private final Game game;
+        private final AtomicLong sequence = new AtomicLong(1L);
+        private long lastCaptureNs;
+
+        private LiveStateRecorder(Game game) {
+            this.game = game;
+        }
+
+        @Subscribe
+        public void onGameEvent(Event event) {
+            String eventName = event == null
+                    ? "<null>"
+                    : event.getClass().getSimpleName();
+            long now = System.nanoTime();
+            boolean force = eventName.contains("Phase")
+                    || eventName.contains("Turn")
+                    || eventName.contains("Lives")
+                    || eventName.contains("Counters")
+                    || eventName.contains("ChangeZone")
+                    || eventName.contains("Tapped")
+                    || eventName.contains("Combat")
+                    || eventName.contains("Started")
+                    || eventName.contains("Finished")
+                    || eventName.contains("Outcome");
+
+            if (force || now - lastCaptureNs >= MIN_CAPTURE_NS) {
+                publish(eventName, false);
+                lastCaptureNs = now;
+            }
+        }
+
+        private void publish(String eventName, boolean force) {
+            try {
+                LiveGameState next = captureLiveState(
+                        game,
+                        sequence.incrementAndGet(),
+                        eventName
+                );
+                liveGameState = next;
+            } catch (Throwable ignored) {
+                if (force) {
+                    liveGameState = new LiveGameState(
+                            sequence.incrementAndGet(),
+                            eventName,
+                            0,
+                            "Snapshot unavailable",
+                            "",
+                            new ArrayList<LiveGameState.PlayerState>(),
+                            new ArrayList<String>(),
+                            game != null && game.isGameOver(),
+                            ""
+                    );
+                }
+            }
         }
     }
 
