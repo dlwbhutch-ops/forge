@@ -20,6 +20,7 @@ import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
@@ -35,6 +36,7 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -74,11 +76,15 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JButton pauseButton = new JButton("Pause After Current Game");
     private final JButton resetButton = new JButton("Reset Tournament");
     private final JButton folderButton = new JButton("Open HOUSE Data Folder");
+    private final JButton watchButton = new JButton("Run & Watch 1 Literal Game");
+    private final JButton playButton = new JButton("Pilot a Deck vs AI");
+    private final JLabel watchStatus = new JLabel("Spectator feed ready");
+    private final JTextArea watchLog = new JTextArea();
 
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.11");
+        super("HOUSE Commander Lab 0.12");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -111,49 +117,82 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.11 • ManaBox + Plain-Text Import • Mac + Windows"
+                "Desktop 0.12 • Unified Lab • Decks + Tournament + Watch + Play"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
         header.add(engineStatus, BorderLayout.SOUTH);
         root.add(header, BorderLayout.NORTH);
 
-        JPanel libraryPanel = new JPanel(new BorderLayout(8, 8));
-        libraryPanel.setBorder(BorderFactory.createTitledBorder("Deck Library → Tournament Roster"));
+        JTabbedPane modes = new JTabbedPane();
+        modes.addTab("Decks", buildDecksPanel());
+        modes.addTab("Tournament", buildTournamentPanel());
+        modes.addTab("Results", buildResultsPanel());
+        modes.addTab("Watch", buildWatchPanel());
+        modes.addTab("Play", buildPlayPanel());
+        root.add(modes, BorderLayout.CENTER);
+
+        JLabel footer = new JLabel(
+                "One app • one Forge engine • one deck library • one results/checkpoint store"
+        );
+        root.add(footer, BorderLayout.SOUTH);
+        return root;
+    }
+
+    private JPanel buildDecksPanel() {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
         librarySummary.setFont(librarySummary.getFont().deriveFont(Font.BOLD));
-        libraryPanel.add(librarySummary, BorderLayout.NORTH);
+        panel.add(librarySummary, BorderLayout.NORTH);
 
         rosterText.setEditable(false);
         rosterText.setLineWrap(false);
         rosterText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        libraryPanel.add(new JScrollPane(rosterText), BorderLayout.CENTER);
+        panel.add(new JScrollPane(rosterText), BorderLayout.CENTER);
 
-        JPanel libraryButtons = new JPanel(new GridLayout(0, 1, 6, 6));
-        libraryButtons.add(importButton);
-        libraryButtons.add(manageButton);
-        libraryButtons.add(rosterButton);
-        libraryButtons.add(restoreButton);
-        libraryButtons.add(folderButton);
-        libraryPanel.add(libraryButtons, BorderLayout.EAST);
+        JPanel buttons = new JPanel(new GridLayout(0, 1, 6, 6));
+        buttons.add(importButton);
+        buttons.add(manageButton);
+        buttons.add(rosterButton);
+        buttons.add(restoreButton);
+        buttons.add(folderButton);
+        panel.add(buttons, BorderLayout.EAST);
+        return panel;
+    }
 
-        JPanel tournamentPanel = new JPanel(new BorderLayout(8, 8));
-        tournamentPanel.setBorder(BorderFactory.createTitledBorder("Literal Forge Tournament"));
+    private JPanel buildTournamentPanel() {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        JPanel runButtons = new JPanel(new GridLayout(0, 2, 6, 6));
-        runButtons.add(testButton);
-        runButtons.add(oneButton);
-        runButtons.add(fiveHundredButton);
-        runButtons.add(pauseButton);
-        runButtons.add(resetButton);
-        tournamentPanel.add(runButtons, BorderLayout.NORTH);
+        JPanel buttons = new JPanel(new GridLayout(0, 2, 6, 6));
+        buttons.add(testButton);
+        buttons.add(oneButton);
+        buttons.add(fiveHundredButton);
+        buttons.add(pauseButton);
+        buttons.add(resetButton);
+        panel.add(buttons, BorderLayout.NORTH);
 
         JPanel live = new JPanel(new BorderLayout(6, 6));
         runStatus.setFont(runStatus.getFont().deriveFont(Font.BOLD));
         live.add(runStatus, BorderLayout.NORTH);
         progress.setStringPainted(true);
-        live.add(progress, BorderLayout.SOUTH);
-        tournamentPanel.add(live, BorderLayout.CENTER);
+        live.add(progress, BorderLayout.CENTER);
+        panel.add(live, BorderLayout.CENTER);
 
+        JTextArea note = new JTextArea(
+                "Literal Forge only. HOUSE preserves checkpoints after every game and "
+                        + "never substitutes matchup scores or guessed winners."
+        );
+        note.setEditable(false);
+        note.setLineWrap(true);
+        note.setWrapStyleWord(true);
+        note.setOpaque(false);
+        panel.add(note, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    private JPanel buildResultsPanel() {
         JTable resultsTable = new JTable(resultsModel);
         resultsTable.setAutoCreateRowSorter(true);
         resultsTable.getColumnModel().getColumn(0).setPreferredWidth(45);
@@ -162,30 +201,55 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         resultsTable.getColumnModel().getColumn(3).setPreferredWidth(65);
         resultsTable.getColumnModel().getColumn(4).setPreferredWidth(85);
 
-        JPanel resultsPanel = new JPanel(new BorderLayout());
-        resultsPanel.setBorder(BorderFactory.createTitledBorder("Results"));
-        resultsPanel.add(new JScrollPane(resultsTable), BorderLayout.CENTER);
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        panel.add(new JScrollPane(resultsTable), BorderLayout.CENTER);
+        return panel;
+    }
 
-        JSplitPane vertical = new JSplitPane(
-                JSplitPane.VERTICAL_SPLIT,
-                libraryPanel,
-                tournamentPanel
-        );
-        vertical.setResizeWeight(0.66d);
+    private JPanel buildWatchPanel() {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        JSplitPane main = new JSplitPane(
-                JSplitPane.HORIZONTAL_SPLIT,
-                vertical,
-                resultsPanel
-        );
-        main.setResizeWeight(0.62d);
-        root.add(main, BorderLayout.CENTER);
+        JPanel controls = new JPanel(new BorderLayout(8, 8));
+        controls.add(watchStatus, BorderLayout.CENTER);
+        controls.add(watchButton, BorderLayout.EAST);
+        panel.add(controls, BorderLayout.NORTH);
 
-        JLabel footer = new JLabel(
-                "HOUSE data is stored in ~/.house-commander-lab • roster stays 19 decks; library may grow"
+        watchLog.setEditable(false);
+        watchLog.setLineWrap(false);
+        watchLog.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        watchLog.setText(
+                "Run a literal test game to watch Forge's event log here.\n"
+                        + "This spectator surface will become the graphical battlefield "
+                        + "without changing the underlying engine."
         );
-        root.add(footer, BorderLayout.SOUTH);
-        return root;
+        panel.add(new JScrollPane(watchLog), BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildPlayPanel() {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
+
+        JTextArea description = new JTextArea(
+                "Play mode lives inside HOUSE Commander Lab too. The next bridge step "
+                        + "will hand one Forge seat's decisions to you while the other "
+                        + "players remain AI-controlled. No second application or separate "
+                        + "deck database will be used."
+        );
+        description.setEditable(false);
+        description.setLineWrap(true);
+        description.setWrapStyleWord(true);
+        description.setOpaque(false);
+        panel.add(description, BorderLayout.NORTH);
+
+        playButton.setEnabled(false);
+        playButton.setToolTipText(
+                "Human decision callbacks are the next engine milestone."
+        );
+        panel.add(playButton, BorderLayout.CENTER);
+        return panel;
     }
 
     private void wireActions() {
@@ -199,6 +263,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         fiveHundredButton.addActionListener(event -> runner.runTournament(500));
         pauseButton.addActionListener(event -> runner.requestPause());
         resetButton.addActionListener(event -> resetTournament());
+        watchButton.addActionListener(event -> runner.runOneLiteralGame());
     }
 
     private void importDeck() {
@@ -630,6 +695,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         refreshLibrary();
         refreshState();
         refreshResults();
+        refreshWatch();
     }
 
     private void refreshLibrary() {
@@ -687,6 +753,36 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         fiveHundredButton.setEnabled(!running && ForgeBridge.isAvailable());
         pauseButton.setEnabled(running);
         resetButton.setEnabled(!running);
+        watchButton.setEnabled(!running && ForgeBridge.isAvailable());
+    }
+
+    private void refreshWatch() {
+        File log = new File(HouseDesktopPaths.logsDir(), "desktop-test-game.log");
+        DesktopStateStore.State state = runner.state();
+
+        if (runner.isActive() && "TESTING".equals(state.status)) {
+            watchStatus.setText("LIVE • literal Forge game in progress");
+        } else if ("TEST_COMPLETE".equals(state.status)) {
+            watchStatus.setText(state.lastMessage);
+        } else {
+            watchStatus.setText("Spectator feed ready");
+        }
+
+        if (!log.isFile()) {
+            return;
+        }
+
+        try {
+            String text = Files.readString(log.toPath());
+            int max = 24000;
+            if (text.length() > max) {
+                text = "… earlier log omitted …\n" + text.substring(text.length() - max);
+            }
+            watchLog.setText(text);
+            watchLog.setCaretPosition(watchLog.getDocument().getLength());
+        } catch (Throwable ignored) {
+            // The game writer may have the file between writes; retry on the next refresh.
+        }
     }
 
     private void refreshResults() {
