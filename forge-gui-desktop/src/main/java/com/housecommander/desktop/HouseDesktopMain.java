@@ -6,6 +6,7 @@ import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
+import com.housecommander.forgebridge.LiveGameState;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -78,13 +79,15 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JButton folderButton = new JButton("Open HOUSE Data Folder");
     private final JButton watchButton = new JButton("Run & Watch 1 Literal Game");
     private final JButton playButton = new JButton("Pilot a Deck vs AI");
-    private final JLabel watchStatus = new JLabel("Spectator feed ready");
+    private final JLabel watchStatus = new JLabel("Spectator board ready");
+    private final JPanel watchBoard = new JPanel(new GridLayout(2, 2, 8, 8));
+    private final JTextArea watchStack = new JTextArea();
     private final JTextArea watchLog = new JTextArea();
 
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.12");
+        super("HOUSE Commander Lab 0.13");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -117,7 +120,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.12 • Unified Lab • Decks + Tournament + Watch + Play"
+                "Desktop 0.13 • Live Battlefield • Unified HOUSE Lab"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
@@ -212,19 +215,28 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         JPanel controls = new JPanel(new BorderLayout(8, 8));
+        watchStatus.setFont(watchStatus.getFont().deriveFont(Font.BOLD));
         controls.add(watchStatus, BorderLayout.CENTER);
         controls.add(watchButton, BorderLayout.EAST);
         panel.add(controls, BorderLayout.NORTH);
 
+        watchBoard.setBorder(BorderFactory.createTitledBorder("Literal Forge Battlefield"));
+        panel.add(watchBoard, BorderLayout.CENTER);
+
+        watchStack.setEditable(false);
+        watchStack.setLineWrap(true);
+        watchStack.setWrapStyleWord(true);
+        watchStack.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+
         watchLog.setEditable(false);
         watchLog.setLineWrap(false);
         watchLog.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        watchLog.setText(
-                "Run a literal test game to watch Forge's event log here.\n"
-                        + "This spectator surface will become the graphical battlefield "
-                        + "without changing the underlying engine."
-        );
-        panel.add(new JScrollPane(watchLog), BorderLayout.CENTER);
+
+        JTabbedPane diagnostics = new JTabbedPane();
+        diagnostics.addTab("Stack", new JScrollPane(watchStack));
+        diagnostics.addTab("Forge Log", new JScrollPane(watchLog));
+        diagnostics.setPreferredSize(new Dimension(900, 210));
+        panel.add(diagnostics, BorderLayout.SOUTH);
         return panel;
     }
 
@@ -757,14 +769,56 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     }
 
     private void refreshWatch() {
-        DesktopStateStore.State state = runner.state();
+        DesktopStateStore.State run = runner.state();
+        LiveGameState live = ForgeBridge.liveGameState();
 
-        if (runner.isActive() && "TESTING".equals(state.status)) {
-            watchStatus.setText("LIVE • literal Forge game in progress");
-        } else if ("TEST_COMPLETE".equals(state.status)) {
-            watchStatus.setText(state.lastMessage);
+        if (live.sequence() > 1L) {
+            String winner = live.winner().isEmpty() ? "" : " • winner " + live.winner();
+            watchStatus.setText(
+                    "Turn " + live.turn()
+                            + " • " + live.phase()
+                            + (live.activePlayer().isEmpty()
+                            ? ""
+                            : " • active " + live.activePlayer())
+                            + " • " + live.lastEvent()
+                            + winner
+            );
+        } else if (runner.isActive() && "TESTING".equals(run.status)) {
+            watchStatus.setText("LIVE • Forge is starting the literal game");
         } else {
-            watchStatus.setText("Spectator feed ready");
+            watchStatus.setText("Spectator board ready");
+        }
+
+        watchBoard.removeAll();
+        if (live.players().isEmpty()) {
+            JPanel waiting = new JPanel(new BorderLayout());
+            waiting.add(
+                    new JLabel(
+                            "<html><center>Run & Watch a literal Forge game.<br>"
+                                    + "The four-player battlefield will appear here.</center></html>",
+                            JLabel.CENTER
+                    ),
+                    BorderLayout.CENTER
+            );
+            watchBoard.add(waiting);
+        } else {
+            for (LiveGameState.PlayerState player : live.players()) {
+                watchBoard.add(buildPlayerBoard(player, live.activePlayer()));
+            }
+        }
+        watchBoard.revalidate();
+        watchBoard.repaint();
+
+        if (live.stack().isEmpty()) {
+            watchStack.setText("Stack empty");
+        } else {
+            StringBuilder stackText = new StringBuilder();
+            int i = 1;
+            for (String item : live.stack()) {
+                stackText.append(i++).append(". ").append(item).append("\n");
+            }
+            watchStack.setText(stackText.toString());
+            watchStack.setCaretPosition(0);
         }
 
         try {
@@ -784,8 +838,91 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             watchLog.setText(text);
             watchLog.setCaretPosition(watchLog.getDocument().getLength());
         } catch (Throwable ignored) {
-            // The game writer may have the file between writes; retry on the next refresh.
+            // Forge may be writing this diagnostics file; retry next refresh.
         }
+    }
+
+    private JPanel buildPlayerBoard(
+            LiveGameState.PlayerState player,
+            String activePlayer
+    ) {
+        JPanel panel = new JPanel(new BorderLayout(5, 5));
+        boolean active = player.name().equals(activePlayer);
+        String status = player.lost() ? " • OUT" : (active ? " • ACTIVE" : "");
+        JLabel header = new JLabel(
+                player.name()
+                        + status
+                        + "   ♥ "
+                        + player.life()
+                        + "   ☠ "
+                        + player.poison()
+                        + "   Hand "
+                        + player.handCount()
+                        + "   Library "
+                        + player.libraryCount()
+        );
+        header.setFont(header.getFont().deriveFont(Font.BOLD));
+        panel.add(header, BorderLayout.NORTH);
+
+        JPanel permanents = new JPanel(new GridLayout(0, 3, 4, 4));
+        if (player.battlefield().isEmpty()) {
+            permanents.add(new JLabel("Battlefield empty", JLabel.CENTER));
+        } else {
+            for (LiveGameState.CardState card : player.battlefield()) {
+                StringBuilder label = new StringBuilder("<html><center>");
+                label.append(card.name());
+                if (card.creature()) {
+                    label.append("<br>").append(card.power()).append("/")
+                            .append(card.toughness());
+                }
+                if (card.tapped()) {
+                    label.append("<br>[tapped]");
+                }
+                if (card.token()) {
+                    label.append(" [token]");
+                }
+                label.append("</center></html>");
+                JLabel cardLabel = new JLabel(label.toString(), JLabel.CENTER);
+                cardLabel.setBorder(BorderFactory.createEtchedBorder());
+                permanents.add(cardLabel);
+            }
+        }
+        panel.add(new JScrollPane(permanents), BorderLayout.CENTER);
+
+        JTextArea zones = new JTextArea();
+        zones.setEditable(false);
+        zones.setLineWrap(true);
+        zones.setWrapStyleWord(true);
+        zones.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        zones.setRows(4);
+        zones.setText(
+                "Command: " + zoneSummary(player.command(), 4)
+                        + "\nGraveyard (" + player.graveyard().size() + "): "
+                        + zoneSummary(player.graveyard(), 5)
+                        + "\nExile (" + player.exile().size() + "): "
+                        + zoneSummary(player.exile(), 5)
+        );
+        panel.add(zones, BorderLayout.SOUTH);
+        panel.setBorder(BorderFactory.createEtchedBorder());
+        return panel;
+    }
+
+    private static String zoneSummary(List<String> cards, int limit) {
+        if (cards == null || cards.isEmpty()) {
+            return "—";
+        }
+        StringBuilder out = new StringBuilder();
+        int start = Math.max(0, cards.size() - Math.max(1, limit));
+        for (int i = start; i < cards.size(); i++) {
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append(cards.get(i));
+        }
+        if (start > 0) {
+            out.insert(0, "… ");
+        }
+        return out.toString();
     }
 
     private void refreshResults() {
