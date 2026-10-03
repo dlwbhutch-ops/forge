@@ -663,7 +663,7 @@ public final class DeckLibraryStore {
         try (FileOutputStream out = new FileOutputStream(destination, false)) {
             byte[] buffer = new byte[64 * 1024];
             int n;
-            while ((n = input.read(buffer)) >= 0) {
+            while ((n = input.read(buffer)) != -1) {
                 out.write(buffer, 0, n);
             }
             out.getFD().sync();
