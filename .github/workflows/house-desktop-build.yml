@@ -5,6 +5,7 @@ on:
     branches:
       - house-commander-lab-v05
       - 'house-desktop-foundation-v09-*'
+      - 'house-deck-management-v010-*'
   workflow_dispatch:
 
 jobs:
