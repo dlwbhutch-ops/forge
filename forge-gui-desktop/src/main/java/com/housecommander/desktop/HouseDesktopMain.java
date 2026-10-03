@@ -757,7 +757,6 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     }
 
     private void refreshWatch() {
-        File log = new File(HouseDesktopPaths.logsDir(), "desktop-test-game.log");
         DesktopStateStore.State state = runner.state();
 
         if (runner.isActive() && "TESTING".equals(state.status)) {
@@ -768,11 +767,15 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             watchStatus.setText("Spectator feed ready");
         }
 
-        if (!log.isFile()) {
-            return;
-        }
-
         try {
+            File log = new File(
+                    HouseDesktopPaths.logsDir(),
+                    "desktop-test-game.log"
+            );
+            if (!log.isFile()) {
+                return;
+            }
+
             String text = Files.readString(log.toPath());
             int max = 24000;
             if (text.length() > max) {
