@@ -6,6 +6,7 @@ on:
       - house-commander-lab-v05
       - 'house-deck-management-v010-*'
       - 'house-manabox-import-v011-*'
+      - 'house-unified-app-v012-*'
   workflow_dispatch:
 
 jobs:
