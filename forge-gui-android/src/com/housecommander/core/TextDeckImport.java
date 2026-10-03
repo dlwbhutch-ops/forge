@@ -34,6 +34,29 @@ public final class TextDeckImport {
 
     private TextDeckImport() {}
 
+    public static byte[] normalizeToForgeDck(InputStream input, String fallbackName) throws IOException {
+        if (input == null) {
+            throw new IllegalArgumentException("Deck input must not be null");
+        }
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        byte[] buffer = new byte[16384];
+        int n;
+        while ((n = input.read(buffer)) != -1) {
+            bytes.write(buffer, 0, n);
+        }
+        byte[] raw = bytes.toByteArray();
+
+        try (ByteArrayInputStream check = new ByteArrayInputStream(raw)) {
+            DeckFileSnapshot parsed = DeckFileParser.parse(check, fallbackName);
+            if (parsed.cardCount() == 100 && !parsed.commanders().isEmpty()) {
+                return raw;
+            }
+        }
+        try (ByteArrayInputStream text = new ByteArrayInputStream(raw)) {
+            return toForgeDck(text, fallbackName);
+        }
+    }
+
     public static byte[] toForgeDck(InputStream input, String fallbackName) throws IOException {
         if (input == null) {
             throw new IllegalArgumentException("Deck input must not be null");
