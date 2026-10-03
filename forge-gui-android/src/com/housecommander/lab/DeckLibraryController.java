@@ -528,7 +528,12 @@ public final class DeckLibraryController {
     private void openDocument(int requestCode) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
+        intent.setType("text/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "text/plain",
+                "application/octet-stream",
+                "application/x-forge-deck"
+        });
         activity.startActivityForResult(intent, requestCode);
     }
 
