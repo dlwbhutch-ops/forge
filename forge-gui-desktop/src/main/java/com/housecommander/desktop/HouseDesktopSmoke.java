@@ -33,6 +33,8 @@ public final class HouseDesktopSmoke {
         }
         System.out.println("DESKTOP_FORGE_PASS " + ForgeBridge.status());
 
+        verifyManaBoxImport(pack);
+
         PodSpec pod = pack.schedule().get(0);
         String[] deckPaths = new String[pod.members().size()];
         for (int i = 0; i < pod.members().size(); i++) {
@@ -62,6 +64,46 @@ public final class HouseDesktopSmoke {
                 throw expected;
             }
             System.out.println("DESKTOP_LITERAL_PROGRESS_PASS turns=" + turns);
+        }
+    }
+
+    private static void verifyManaBoxImport(HousePackage pack) throws Exception {
+        File fixture = new File(
+                ".github/house-test-data/Jace_Multiverse_Architect_12-Swap_Official_2026-10-03.txt"
+        );
+        if (!fixture.isFile()) {
+            throw new AssertionError("Jace ManaBox fixture is missing");
+        }
+
+        DesktopDeckLibraryStore store = new DesktopDeckLibraryStore();
+        DeckSpec imported = store.importDeck(pack, fixture);
+        try {
+            DeckFileSnapshot snapshot = store.snapshot(imported);
+            if (snapshot.cardCount() != 100) {
+                throw new AssertionError(
+                        "Jace text import produced " + snapshot.cardCount() + " cards"
+                );
+            }
+            if (!snapshot.commanders().contains("Jace, Multiverse Architect")) {
+                throw new AssertionError(
+                        "Jace text import did not preserve the commander: "
+                                + snapshot.commanders()
+                );
+            }
+
+            String forgeName = ForgeBridge.validateCommanderDeck(
+                    HouseDesktopRuntime.deckFile(imported).getAbsolutePath()
+            );
+            System.out.println(
+                    "DESKTOP_MANABOX_IMPORT_PASS deck="
+                            + imported.deck()
+                            + " forge="
+                            + forgeName
+                            + " cards="
+                            + snapshot.cardCount()
+            );
+        } finally {
+            store.removeImportedDeck(pack, imported);
         }
     }
 
