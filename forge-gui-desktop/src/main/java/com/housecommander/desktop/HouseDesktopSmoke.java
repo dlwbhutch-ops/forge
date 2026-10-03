@@ -1,12 +1,15 @@
 package com.housecommander.desktop;
 
+import com.housecommander.core.DeckFileSnapshot;
 import com.housecommander.core.DeckSpec;
+import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.PodSpec;
 import com.housecommander.forgebridge.ForgeBridge;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 public final class HouseDesktopSmoke {
@@ -21,6 +24,8 @@ public final class HouseDesktopSmoke {
             throw new AssertionError("Unexpected HOUSE desktop package dimensions");
         }
         System.out.println("DESKTOP_PACKAGE_PASS " + pack.validation().summary());
+
+        verifyDeckManagement(pack);
 
         DesktopForgeBootstrap.ensureReady(System.out::println);
         if (!ForgeBridge.isAvailable()) {
@@ -58,5 +63,49 @@ public final class HouseDesktopSmoke {
             }
             System.out.println("DESKTOP_LITERAL_PROGRESS_PASS turns=" + turns);
         }
+    }
+
+    private static void verifyDeckManagement(HousePackage pack) throws Exception {
+        DesktopDeckLibraryStore store = new DesktopDeckLibraryStore();
+        DeckSpec first = pack.decks().get(0);
+        DeckSpec second = pack.decks().get(1);
+
+        DeckSpec imported = store.importDeck(
+                pack,
+                HouseDesktopRuntime.deckFile(first)
+        );
+        DeckFileSnapshot snapshot = store.snapshot(imported);
+        if (snapshot.cardCount() != 100) {
+            throw new AssertionError("Imported deck inspection failed");
+        }
+
+        DeckSpec updated = store.replaceImportedDeck(
+                pack,
+                imported,
+                HouseDesktopRuntime.deckFile(second)
+        );
+        List<DeckVersion> versions = store.history(updated);
+        if (versions.size() != 1) {
+            throw new AssertionError("Expected one archived version after replace");
+        }
+        if (store.snapshot(updated).cardCount() != 100) {
+            throw new AssertionError("Updated deck inspection failed");
+        }
+
+        DeckSpec restored = store.restoreVersion(pack, updated, versions.get(0));
+        if (store.history(restored).size() < 2) {
+            throw new AssertionError("Restore did not archive the pre-restore version");
+        }
+        if (store.snapshot(restored).cardCount() != 100) {
+            throw new AssertionError("Restored deck inspection failed");
+        }
+
+        store.removeImportedDeck(pack, restored);
+        for (DeckSpec deck : store.allDecks(pack)) {
+            if (deck.deck().equals(restored.deck())) {
+                throw new AssertionError("Removed imported deck is still in the library");
+            }
+        }
+        System.out.println("DESKTOP_DECK_MANAGEMENT_PASS");
     }
 }
