@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - house-commander-lab-v05
+      - 'house-deck-management-v010-*'
   workflow_dispatch:
 
 jobs:
