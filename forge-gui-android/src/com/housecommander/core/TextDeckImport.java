@@ -53,7 +53,7 @@ public final class TextDeckImport {
             }
         }
         try (ByteArrayInputStream text = new ByteArrayInputStream(raw)) {
-            return toForgeDck(text, fallbackName);
+            return toForgeDck(text, "");
         }
     }
 
