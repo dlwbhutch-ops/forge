@@ -119,6 +119,72 @@ public final class ForgeBridge {
     }
 
     /**
+     * Strictly loads one Commander deck through Forge without starting a game.
+     * Used by import validation so text-converted decks cannot enter the
+     * library if Forge would silently omit or mark any cards unsupported.
+     */
+    public static String validateCommanderDeck(String deckPath) throws IOException {
+        if (!isAvailable()) {
+            throw new IllegalStateException(
+                    "Forge engine/card database is not ready: " + status()
+            );
+        }
+        if (deckPath == null || deckPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("Deck path is empty");
+        }
+
+        File file = new File(deckPath);
+        if (!file.isFile() || !file.canRead()) {
+            throw new IOException("Deck file is missing or unreadable: " + file.getAbsolutePath());
+        }
+
+        final Deck deck;
+        try {
+            deck = ForgeDeckLoader.load(file);
+        } catch (Throwable t) {
+            throw new IOException(
+                    "Forge failed while loading deck: "
+                            + file.getAbsolutePath()
+                            + " -- "
+                            + safeMessage(t),
+                    t
+            );
+        }
+        if (deck == null) {
+            throw new IOException("Forge could not parse deck: " + file.getAbsolutePath());
+        }
+
+        int loadedCards = deck.getAllCardsInASinglePool().countAll();
+        if (loadedCards != 100 || deck.getCommanders().isEmpty()) {
+            throw new IOException(
+                    "STRICT GATE: " + file.getName() + " loaded "
+                            + loadedCards + "/100 cards in Forge; commanders="
+                            + deck.getCommanders().size()
+                            + ". Check unsupported card names."
+            );
+        }
+
+        List<String> unsupported = new ArrayList<String>();
+        for (Map.Entry<PaperCard, Integer> entry : deck.getAllCardsInASinglePool()) {
+            if (entry.getKey().getRules().isUnsupported()) {
+                unsupported.add(entry.getKey().getName());
+            }
+        }
+        if (!unsupported.isEmpty()) {
+            throw new IOException(
+                    "STRICT GATE: " + file.getName()
+                            + " contains cards without Forge rules scripts: "
+                            + String.join(", ", unsupported)
+            );
+        }
+
+        String name = deck.getName();
+        return (name == null || name.trim().isEmpty())
+                ? file.getName()
+                : name.trim();
+    }
+
+    /**
      * Legacy bridge-0.6 ABI retained so an older adapter fails safely rather
      * than with NoSuchMethodException. It now uses a three-minute stall guard.
      */
