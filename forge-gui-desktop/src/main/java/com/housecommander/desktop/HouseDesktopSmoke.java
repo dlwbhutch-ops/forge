@@ -6,6 +6,7 @@ import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.PodSpec;
 import com.housecommander.forgebridge.ForgeBridge;
+import com.housecommander.forgebridge.LiveGameState;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -65,6 +66,26 @@ public final class HouseDesktopSmoke {
             }
             System.out.println("DESKTOP_LITERAL_PROGRESS_PASS turns=" + turns);
         }
+
+        LiveGameState live = ForgeBridge.liveGameState();
+        if (live.sequence() <= 1L || live.players().size() != pod.members().size()) {
+            throw new AssertionError(
+                    "Live spectator state missing: sequence="
+                            + live.sequence()
+                            + " players="
+                            + live.players().size()
+            );
+        }
+        System.out.println(
+                "DESKTOP_LIVE_STATE_PASS turn="
+                        + live.turn()
+                        + " phase="
+                        + live.phase()
+                        + " players="
+                        + live.players().size()
+                        + " event="
+                        + live.lastEvent()
+        );
     }
 
     private static void verifyManaBoxImport(HousePackage pack) throws Exception {
