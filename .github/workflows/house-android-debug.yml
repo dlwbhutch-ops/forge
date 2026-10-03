@@ -7,6 +7,7 @@ on:
       - 'house-deck-management-v010-*'
       - 'house-manabox-import-v011-*'
       - 'house-unified-app-v012-*'
+      - 'house-watch-game-v013-*'
   workflow_dispatch:
 
 jobs:
