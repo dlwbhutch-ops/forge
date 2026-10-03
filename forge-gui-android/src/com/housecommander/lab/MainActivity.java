@@ -28,6 +28,8 @@ import com.housecommander.lab.state.StateStore;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
 
 public final class MainActivity extends Activity {
     private static final int DEFAULT_POD_COUNT = 95;
@@ -50,6 +52,10 @@ public final class MainActivity extends Activity {
     private Button manageLibraryButton;
     private Button rosterButton;
     private Button defaultRosterButton;
+    private Button watchButton;
+    private Button playButton;
+    private TextView watchStatus;
+    private TextView watchDetails;
     private DeckLibraryController libraryController;
 
     private boolean preflightPass;
@@ -62,6 +68,7 @@ public final class MainActivity extends Activity {
         public void run() {
             refreshEngineStatus();
             updateRunState();
+            refreshWatchView();
             handler.postDelayed(this, 1000L);
         }
     };
@@ -131,7 +138,12 @@ public final class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException error) {
             installedVersion = "unknown build";
         }
-        TextView version = text("Bridge 0.11 • ManaBox + Plain-Text Import\n" + installedVersion, 14, false);
+        TextView version = text(
+                "Bridge 0.12 • Unified Lab • Decks + Tournament + Watch + Play\n"
+                        + installedVersion,
+                14,
+                false
+        );
         version.setAlpha(0.75f);
         root.addView(version);
 
@@ -145,6 +157,15 @@ public final class MainActivity extends Activity {
         TextView deviceView = text(device, 13, false);
         deviceView.setPadding(0, dp(8), 0, dp(20));
         root.addView(deviceView);
+
+        TextView unified = text(
+                "One app • one Forge engine • one deck library • one tournament/results store. "
+                        + "Decks, Tournament, Watch, and Play all live here.",
+                14,
+                true
+        );
+        unified.setPadding(0, 0, 0, dp(8));
+        root.addView(unified);
 
         root.addView(section("STRICT PREFLIGHT"));
 
@@ -257,6 +278,46 @@ public final class MainActivity extends Activity {
         });
         root.addView(resetButton);
 
+        root.addView(section("WATCH GAME"));
+
+        watchButton = button("Run & watch 1 literal Forge game");
+        watchButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startTest();
+            }
+        });
+        root.addView(watchButton);
+
+        watchStatus = text("Spectator feed ready", 16, true);
+        watchStatus.setPadding(0, dp(8), 0, dp(6));
+        root.addView(watchStatus);
+
+        watchDetails = text(
+                "Run a literal test game to stream Forge's event log here. "
+                        + "The graphical battlefield will replace this feed without changing apps.",
+                12,
+                false
+        );
+        watchDetails.setTypeface(Typeface.MONOSPACE);
+        watchDetails.setTextIsSelectable(true);
+        root.addView(watchDetails);
+
+        root.addView(section("PLAY VS AI"));
+
+        playButton = button("Pilot a deck vs AI");
+        playButton.setEnabled(false);
+        root.addView(playButton);
+
+        TextView playNote = text(
+                "Human-seat decision controls are the next engine bridge milestone. "
+                        + "They will unlock here inside this same HOUSE app.",
+                13,
+                false
+        );
+        playNote.setAlpha(0.8f);
+        root.addView(playNote);
+
         root.addView(section("LIVE STATUS"));
 
         runStatus = text("Ready", 18, true);
@@ -367,6 +428,8 @@ public final class MainActivity extends Activity {
         manageLibraryButton.setEnabled(!running);
         rosterButton.setEnabled(!running);
         defaultRosterButton.setEnabled(!running);
+        watchButton.setEnabled(enabled);
+        playButton.setEnabled(false);
 
         long games500 = (long) podCount * 500L;
 
@@ -446,6 +509,63 @@ public final class MainActivity extends Activity {
         );
 
         updateButtons(state);
+    }
+
+    private void refreshWatchView() {
+        if (watchStatus == null || watchDetails == null) {
+            return;
+        }
+        RunState state = new StateStore(this).load();
+        if ("TESTING".equals(state.status)) {
+            watchStatus.setText("LIVE • literal Forge game in progress");
+        } else if ("TEST_COMPLETE".equals(state.status)) {
+            watchStatus.setText(state.lastMessage);
+        } else {
+            watchStatus.setText("Spectator feed ready");
+        }
+
+        File testDir = new File(getFilesDir(), "logs/test");
+        File log = newestLog(testDir);
+        if (log == null) {
+            return;
+        }
+        try {
+            int max = 16000;
+            long length = log.length();
+            long start = Math.max(0L, length - max);
+            byte[] bytes = new byte[(int) (length - start)];
+            try (RandomAccessFile input = new RandomAccessFile(log, "r")) {
+                input.seek(start);
+                input.readFully(bytes);
+            }
+            String text = new String(bytes, StandardCharsets.UTF_8);
+            if (start > 0L) {
+                text = "… earlier log omitted …\n" + text;
+            }
+            watchDetails.setText(text);
+        } catch (Throwable ignored) {
+            // Forge can be writing this file during the refresh; retry next tick.
+        }
+    }
+
+    private static File newestLog(File directory) {
+        if (directory == null || !directory.isDirectory()) {
+            return null;
+        }
+        File[] files = directory.listFiles();
+        if (files == null) {
+            return null;
+        }
+        File newest = null;
+        for (File file : files) {
+            if (!file.isFile() || !file.getName().endsWith(".log")) {
+                continue;
+            }
+            if (newest == null || file.lastModified() > newest.lastModified()) {
+                newest = file;
+            }
+        }
+        return newest;
     }
 
     private void confirmReset() {
