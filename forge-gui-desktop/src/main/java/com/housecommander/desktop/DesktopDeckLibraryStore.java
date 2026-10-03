@@ -1,7 +1,9 @@
 package com.housecommander.desktop;
 
+import com.housecommander.core.DeckFileParser;
+import com.housecommander.core.DeckFileSnapshot;
 import com.housecommander.core.DeckSpec;
-import com.housecommander.core.ForgeDeckCounter;
+import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.Names;
 import com.housecommander.core.RosterBuilder;
@@ -19,16 +21,20 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Desktop persistence adapter for the same library/roster files used by the
- * Android HOUSE layer: deck_library.tsv and active_roster.txt.
+ * Desktop persistence adapter for the same library/roster/history files used
+ * by the Android HOUSE layer.
  */
 public final class DesktopDeckLibraryStore {
+    private static final String HISTORY_FILE = "deck_history.tsv";
     private static final String IMPORT_DIR = "imported_decks";
+    private static final String HISTORY_DIR = "deck_history";
 
     public List<DeckSpec> allDecks(HousePackage template) throws IOException {
         List<DeckSpec> out = new ArrayList<DeckSpec>();
@@ -104,39 +110,25 @@ public final class DesktopDeckLibraryStore {
     }
 
     public DeckSpec importDeck(HousePackage template, File sourceFile) throws IOException {
-        if (sourceFile == null || !sourceFile.isFile() || !sourceFile.canRead()) {
-            throw new IOException("Selected deck file is missing or unreadable");
-        }
-
-        File dir = new File(HouseDesktopPaths.deckRoot(), IMPORT_DIR);
-        HouseDesktopPaths.ensureDirectory(dir);
-
-        DeckFileInfo info = inspect(sourceFile);
-        if (info.cardCount != 100) {
-            throw new IOException(
-                    "Imported Commander deck contains " + info.cardCount + " cards; expected exactly 100"
-            );
-        }
+        requireReadable(sourceFile);
+        DeckFileSnapshot snapshot = inspectFile(sourceFile, fileStem(sourceFile.getName()));
+        requireOneHundred(snapshot);
 
         List<DeckSpec> current = allDecks(template);
-        String displayName = uniqueDisplayName(info.engineName, current);
+        String displayName = uniqueDisplayName(snapshot.engineName(), current);
         long stamp = System.currentTimeMillis();
-        String relative = IMPORT_DIR + "/" + safeFileStem(info.engineName) + "_" + stamp + ".dck";
+        String relative = currentDeckPath(displayName, stamp);
         File destination = new File(HouseDesktopPaths.deckRoot(), relative);
-        Files.copy(
-                sourceFile.toPath(),
-                destination.toPath(),
-                StandardCopyOption.REPLACE_EXISTING
-        );
+        copyFile(sourceFile, destination);
 
         DeckSpec imported = new DeckSpec(
                 displayName,
                 "import:" + sourceFile.getName(),
-                info.commanders,
+                snapshot.commanderText(),
                 relative,
                 "EXACT",
                 "Imported by HOUSE Commander Lab Desktop • validated 100-card Forge deck",
-                info.engineName
+                snapshot.engineName()
         );
 
         List<DeckSpec> importedDecks = readImportedDecks();
@@ -150,24 +142,228 @@ public final class DesktopDeckLibraryStore {
         return imported;
     }
 
+    public DeckFileSnapshot snapshot(DeckSpec deck) throws IOException {
+        File file = HouseDesktopRuntime.deckFile(deck);
+        requireReadable(file);
+        return inspectFile(file, deck.engineName());
+    }
+
+    public List<DeckVersion> history(DeckSpec deck) throws IOException {
+        List<DeckVersion> matches = new ArrayList<DeckVersion>();
+        String key = Names.canonical(deck.deck());
+        for (DeckVersion version : readHistory()) {
+            if (Names.canonical(version.deck()).equals(key)) {
+                matches.add(version);
+            }
+        }
+        Collections.sort(matches, new Comparator<DeckVersion>() {
+            @Override
+            public int compare(DeckVersion left, DeckVersion right) {
+                return Long.compare(right.savedAtMillis(), left.savedAtMillis());
+            }
+        });
+        return matches;
+    }
+
+    public DeckSpec replaceImportedDeck(
+            HousePackage template,
+            DeckSpec deck,
+            File sourceFile
+    ) throws IOException {
+        requireReadable(sourceFile);
+        DeckSpec current = requireImported(deck);
+        DeckFileSnapshot replacement = inspectFile(sourceFile, fileStem(sourceFile.getName()));
+        requireOneHundred(replacement);
+
+        long stamp = System.currentTimeMillis();
+        List<DeckVersion> oldHistory = readHistory();
+        List<DeckVersion> updatedHistory = new ArrayList<DeckVersion>(oldHistory);
+        File archive = archiveCurrent(current, stamp);
+        updatedHistory.add(versionOf(current, stamp, relativeToRoot(archive)));
+
+        String relative = currentDeckPath(current.deck(), stamp);
+        File destination = new File(HouseDesktopPaths.deckRoot(), relative);
+        copyFile(sourceFile, destination);
+
+        DeckSpec updated = new DeckSpec(
+                current.deck(),
+                "import:" + sourceFile.getName(),
+                replacement.commanderText(),
+                relative,
+                "EXACT",
+                "Updated by HOUSE Commander Lab Desktop • previous version archived",
+                replacement.engineName()
+        );
+
+        List<DeckSpec> imported = readImportedDecks();
+        replaceLibraryEntry(imported, current, updated);
+        try {
+            writeHistory(updatedHistory);
+            writeImportedDecks(imported);
+        } catch (IOException error) {
+            Files.deleteIfExists(destination.toPath());
+            Files.deleteIfExists(archive.toPath());
+            writeHistory(oldHistory);
+            throw error;
+        }
+
+        File oldCurrent = HouseDesktopRuntime.deckFile(current);
+        if (!oldCurrent.equals(destination)) {
+            Files.deleteIfExists(oldCurrent.toPath());
+        }
+        return updated;
+    }
+
+    public DeckSpec restoreVersion(
+            HousePackage template,
+            DeckSpec deck,
+            DeckVersion version
+    ) throws IOException {
+        DeckSpec current = requireImported(deck);
+        if (version == null || !Names.canonical(version.deck()).equals(Names.canonical(current.deck()))) {
+            throw new IOException("Selected version does not belong to " + current.deck());
+        }
+
+        File archivedVersion = new File(HouseDesktopPaths.deckRoot(), version.dck());
+        requireReadable(archivedVersion);
+        DeckFileSnapshot restoredSnapshot = inspectFile(archivedVersion, version.engineName());
+        requireOneHundred(restoredSnapshot);
+
+        long stamp = System.currentTimeMillis();
+        List<DeckVersion> oldHistory = readHistory();
+        List<DeckVersion> updatedHistory = new ArrayList<DeckVersion>(oldHistory);
+        File archive = archiveCurrent(current, stamp);
+        updatedHistory.add(versionOf(current, stamp, relativeToRoot(archive)));
+
+        String relative = currentDeckPath(current.deck(), stamp);
+        File destination = new File(HouseDesktopPaths.deckRoot(), relative);
+        copyFile(archivedVersion, destination);
+
+        DeckSpec restored = new DeckSpec(
+                current.deck(),
+                version.source(),
+                version.commanders(),
+                relative,
+                "EXACT",
+                "Restored HOUSE version from " + version.savedAtMillis(),
+                version.engineName()
+        );
+
+        List<DeckSpec> imported = readImportedDecks();
+        replaceLibraryEntry(imported, current, restored);
+        try {
+            writeHistory(updatedHistory);
+            writeImportedDecks(imported);
+        } catch (IOException error) {
+            Files.deleteIfExists(destination.toPath());
+            Files.deleteIfExists(archive.toPath());
+            writeHistory(oldHistory);
+            throw error;
+        }
+
+        File oldCurrent = HouseDesktopRuntime.deckFile(current);
+        if (!oldCurrent.equals(destination)) {
+            Files.deleteIfExists(oldCurrent.toPath());
+        }
+        return restored;
+    }
+
+    public void removeImportedDeck(HousePackage template, DeckSpec deck) throws IOException {
+        DeckSpec current = requireImported(deck);
+        if (isActive(template, current)) {
+            throw new IOException(
+                    current.deck() + " is in the active tournament roster. "
+                            + "Select a different 19-deck roster before removing it."
+            );
+        }
+
+        List<DeckSpec> imported = readImportedDecks();
+        if (!removeLibraryEntry(imported, current)) {
+            throw new IOException("Imported deck is no longer in the library: " + current.deck());
+        }
+        writeImportedDecks(imported);
+        Files.deleteIfExists(HouseDesktopRuntime.deckFile(current).toPath());
+
+        List<DeckVersion> retained = new ArrayList<DeckVersion>();
+        for (DeckVersion version : readHistory()) {
+            if (Names.canonical(version.deck()).equals(Names.canonical(current.deck()))) {
+                Files.deleteIfExists(
+                        new File(HouseDesktopPaths.deckRoot(), version.dck()).toPath()
+                );
+            } else {
+                retained.add(version);
+            }
+        }
+        writeHistory(retained);
+    }
+
     public boolean isImported(DeckSpec deck) {
         return deck != null && deck.source() != null && deck.source().startsWith("import:");
     }
 
-    private void validateDeckFiles(List<DeckSpec> decks) throws IOException {
-        for (DeckSpec deck : decks) {
-            File file = HouseDesktopRuntime.deckFile(deck);
-            if (!file.isFile() || !file.canRead()) {
-                throw new IOException("Deck file is missing or unreadable: " + deck.deck());
-            }
-            int count;
-            try (InputStream in = new FileInputStream(file)) {
-                count = ForgeDeckCounter.countCards(in);
-            }
-            if (count != 100) {
-                throw new IOException(deck.deck() + " contains " + count + " cards; expected 100");
+    public boolean isActive(HousePackage template, DeckSpec deck) throws IOException {
+        String key = Names.canonical(deck.deck());
+        for (DeckSpec active : loadRoster(template)) {
+            if (Names.canonical(active.deck()).equals(key)) {
+                return true;
             }
         }
+        return false;
+    }
+
+    private DeckSpec requireImported(DeckSpec deck) throws IOException {
+        if (!isImported(deck)) {
+            throw new IOException("Bundled HOUSE decks are read-only in Deck Library management");
+        }
+        String key = Names.canonical(deck.deck());
+        for (DeckSpec imported : readImportedDecks()) {
+            if (Names.canonical(imported.deck()).equals(key)) {
+                return imported;
+            }
+        }
+        throw new IOException("Imported deck is no longer in the library: " + deck.deck());
+    }
+
+    private void validateDeckFiles(List<DeckSpec> decks) throws IOException {
+        for (DeckSpec deck : decks) {
+            DeckFileSnapshot snapshot = snapshot(deck);
+            if (snapshot.cardCount() != 100) {
+                throw new IOException(deck.deck() + " contains "
+                        + snapshot.cardCount() + " cards; expected 100");
+            }
+        }
+    }
+
+    private File archiveCurrent(DeckSpec current, long stamp) throws IOException {
+        File existing = HouseDesktopRuntime.deckFile(current);
+        requireReadable(existing);
+        File dir = new File(HouseDesktopPaths.deckRoot(), HISTORY_DIR);
+        HouseDesktopPaths.ensureDirectory(dir);
+        File archive = new File(dir, safeFileStem(current.deck()) + "_" + stamp + ".dck");
+        copyFile(existing, archive);
+        return archive;
+    }
+
+    private DeckVersion versionOf(DeckSpec deck, long savedAt, String relativePath) {
+        return new DeckVersion(
+                deck.deck(),
+                savedAt,
+                deck.source(),
+                deck.commanders(),
+                relativePath,
+                deck.engineName(),
+                deck.detail()
+        );
+    }
+
+    private String relativeToRoot(File file) throws IOException {
+        File root = HouseDesktopPaths.deckRoot().getCanonicalFile();
+        File target = file.getCanonicalFile();
+        String rootPath = root.getPath() + File.separator;
+        if (!target.getPath().startsWith(rootPath)) {
+            throw new IOException("Deck path is outside HOUSE storage");
+        }
+        return target.getPath().substring(rootPath.length()).replace(File.separatorChar, '/');
     }
 
     private List<DeckSpec> readImportedDecks() throws IOException {
@@ -216,66 +412,110 @@ public final class DesktopDeckLibraryStore {
         replace(temp, file);
     }
 
-    private static DeckFileInfo inspect(File file) throws IOException {
-        int count;
-        try (InputStream in = new FileInputStream(file)) {
-            count = ForgeDeckCounter.countCards(in);
+    private List<DeckVersion> readHistory() throws IOException {
+        List<DeckVersion> out = new ArrayList<DeckVersion>();
+        File file = historyFile();
+        if (!file.isFile() || file.length() == 0L) {
+            return out;
         }
-
-        String metadataName = "";
-        List<String> commanders = new ArrayList<String>();
-        String section = "";
         try (BufferedReader in = new BufferedReader(
                 new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
             String line;
             while ((line = in.readLine()) != null) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty()) {
+                if (line.trim().isEmpty()) {
                     continue;
                 }
-                if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-                    section = trimmed.substring(1, trimmed.length() - 1).trim().toLowerCase();
-                    continue;
+                List<String> fields = splitEscaped(line);
+                if (fields.size() != 7) {
+                    throw new IOException("Malformed deck history row");
                 }
-                if ("metadata".equals(section) && trimmed.startsWith("Name=")) {
-                    metadataName = trimmed.substring("Name=".length()).trim();
-                } else if ("commander".equals(section)) {
-                    int space = trimmed.indexOf(' ');
-                    if (space > 0 && space < trimmed.length() - 1) {
-                        try {
-                            int quantity = Integer.parseInt(trimmed.substring(0, space));
-                            String card = trimmed.substring(space + 1).trim();
-                            for (int i = 0; i < quantity; i++) {
-                                commanders.add(card);
-                            }
-                        } catch (NumberFormatException ignored) {
-                            // Strict card count validation still applies.
-                        }
-                    }
+                long savedAt;
+                try {
+                    savedAt = Long.parseLong(fields.get(1));
+                } catch (NumberFormatException error) {
+                    throw new IOException("Malformed deck history timestamp", error);
                 }
+                out.add(new DeckVersion(
+                        fields.get(0),
+                        savedAt,
+                        fields.get(2),
+                        fields.get(3),
+                        fields.get(4),
+                        fields.get(5),
+                        fields.get(6)
+                ));
             }
         }
+        return out;
+    }
 
-        String fallback = file.getName();
-        int dot = fallback.lastIndexOf('.');
-        if (dot > 0) {
-            fallback = fallback.substring(0, dot);
-        }
-        fallback = fallback.replace('_', ' ').trim();
-
-        String engineName = metadataName.isEmpty() ? fallback : metadataName;
-        if (engineName.isEmpty()) {
-            engineName = "Imported Commander Deck";
-        }
-
-        StringBuilder commanderText = new StringBuilder();
-        for (String commander : commanders) {
-            if (commanderText.length() > 0) {
-                commanderText.append(" | ");
+    private void writeHistory(List<DeckVersion> versions) throws IOException {
+        File file = historyFile();
+        File temp = new File(file.getParentFile(), HISTORY_FILE + ".tmp");
+        try (FileOutputStream fos = new FileOutputStream(temp, false);
+             BufferedWriter out = new BufferedWriter(
+                     new OutputStreamWriter(fos, StandardCharsets.UTF_8))) {
+            for (DeckVersion version : versions) {
+                out.write(joinEscaped(
+                        version.deck(),
+                        Long.toString(version.savedAtMillis()),
+                        version.source(),
+                        version.commanders(),
+                        version.dck(),
+                        version.engineName(),
+                        version.detail()
+                ));
+                out.newLine();
             }
-            commanderText.append(commander);
+            out.flush();
+            fos.getFD().sync();
         }
-        return new DeckFileInfo(engineName, commanderText.toString(), count);
+        replace(temp, file);
+    }
+
+    private File historyFile() throws IOException {
+        return new File(HouseDesktopPaths.home(), HISTORY_FILE);
+    }
+
+    private static DeckFileSnapshot inspectFile(File file, String fallback) throws IOException {
+        try (InputStream in = new FileInputStream(file)) {
+            return DeckFileParser.parse(in, fallback);
+        }
+    }
+
+    private static void requireOneHundred(DeckFileSnapshot snapshot) throws IOException {
+        if (snapshot.cardCount() != 100) {
+            throw new IOException(
+                    "Commander deck contains " + snapshot.cardCount()
+                            + " cards; expected exactly 100"
+            );
+        }
+    }
+
+    private static void replaceLibraryEntry(
+            List<DeckSpec> library,
+            DeckSpec oldDeck,
+            DeckSpec newDeck
+    ) throws IOException {
+        String key = Names.canonical(oldDeck.deck());
+        for (int i = 0; i < library.size(); i++) {
+            if (Names.canonical(library.get(i).deck()).equals(key)) {
+                library.set(i, newDeck);
+                return;
+            }
+        }
+        throw new IOException("Imported deck is no longer in the library: " + oldDeck.deck());
+    }
+
+    private static boolean removeLibraryEntry(List<DeckSpec> library, DeckSpec deck) {
+        String key = Names.canonical(deck.deck());
+        for (int i = 0; i < library.size(); i++) {
+            if (Names.canonical(library.get(i).deck()).equals(key)) {
+                library.remove(i);
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String uniqueDisplayName(String base, List<DeckSpec> current) {
@@ -297,10 +537,45 @@ public final class DesktopDeckLibraryStore {
         return base + " (Imported " + version + ")";
     }
 
+    private static String currentDeckPath(String displayName, long stamp) {
+        return IMPORT_DIR + "/" + safeFileStem(displayName) + "_" + stamp + ".dck";
+    }
+
     private static String safeFileStem(String value) {
-        String safe = value == null ? "deck" : value.trim().replaceAll("[^A-Za-z0-9._-]+", "_");
+        String safe = value == null ? "deck"
+                : value.trim().replaceAll("[^A-Za-z0-9._-]+", "_");
         safe = safe.replaceAll("^_+|_+$", "");
         return safe.isEmpty() ? "deck" : safe;
+    }
+
+    private static String fileStem(String value) {
+        if (value == null) {
+            return "";
+        }
+        String name = new File(value).getName();
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) {
+            name = name.substring(0, dot);
+        }
+        return name.replace('_', ' ').trim();
+    }
+
+    private static void requireReadable(File file) throws IOException {
+        if (file == null || !file.isFile() || !file.canRead()) {
+            throw new IOException("Selected deck file is missing or unreadable");
+        }
+    }
+
+    private static void copyFile(File source, File destination) throws IOException {
+        File parent = destination.getParentFile();
+        if (parent != null) {
+            HouseDesktopPaths.ensureDirectory(parent);
+        }
+        Files.copy(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+        );
     }
 
     private static void replace(File source, File destination) throws IOException {
@@ -375,17 +650,5 @@ public final class DesktopDeckLibraryStore {
     private static String unescape(String value) {
         List<String> one = splitEscaped(value);
         return one.isEmpty() ? "" : one.get(0);
-    }
-
-    private static final class DeckFileInfo {
-        final String engineName;
-        final String commanders;
-        final int cardCount;
-
-        DeckFileInfo(String engineName, String commanders, int cardCount) {
-            this.engineName = engineName;
-            this.commanders = commanders;
-            this.cardCount = cardCount;
-        }
     }
 }
