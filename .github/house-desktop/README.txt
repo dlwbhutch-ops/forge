@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.10 Deck Management
+HOUSE Commander Lab 0.11 ManaBox / Text Import
 
 Requires Java 17 or newer.
 
@@ -25,3 +25,7 @@ literal Forge bridge/watchdog source as Android.
 
 0.10 adds exact 100-card deck viewing, imported-deck replacement, archived
 version history with restore, and safe imported-deck removal.
+
+0.11 accepts Forge .dck, ManaBox text exports, and simple 100-card text lists.
+For a plain list with no headings, place the commander first. HOUSE converts
+the text into a Forge .dck and keeps the same version-management safeguards.
