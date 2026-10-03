@@ -528,7 +528,7 @@ public final class DeckLibraryController {
     private void openDocument(int requestCode) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("text/*");
+        intent.setType("*/*");
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
                 "text/plain",
                 "application/octet-stream",
