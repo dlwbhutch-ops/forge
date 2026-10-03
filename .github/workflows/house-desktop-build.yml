@@ -7,6 +7,7 @@ on:
       - 'house-desktop-foundation-v09-*'
       - 'house-deck-management-v010-*'
       - 'house-manabox-import-v011-*'
+      - 'house-unified-app-v012-*'
   workflow_dispatch:
 
 jobs:
@@ -63,18 +64,18 @@ jobs:
           JAR="$(find forge-gui-desktop/target -maxdepth 1 -type f -name '*jar-with-dependencies.jar' | head -n 1)"
           test -n "$JAR"
           rm -rf house-desktop-dist
-          mkdir -p house-desktop-dist/HOUSE-Commander-Lab-0.11
-          cp "$JAR" house-desktop-dist/HOUSE-Commander-Lab-0.11/HOUSE-Commander-Lab.jar
-          cp .github/house-desktop/HOUSE-Commander-Lab.command house-desktop-dist/HOUSE-Commander-Lab-0.11/
-          cp .github/house-desktop/HOUSE-Commander-Lab.cmd house-desktop-dist/HOUSE-Commander-Lab-0.11/
-          cp .github/house-desktop/README.txt house-desktop-dist/HOUSE-Commander-Lab-0.11/
-          chmod +x house-desktop-dist/HOUSE-Commander-Lab-0.11/HOUSE-Commander-Lab.command
+          mkdir -p house-desktop-dist/HOUSE-Commander-Lab-0.12
+          cp "$JAR" house-desktop-dist/HOUSE-Commander-Lab-0.12/HOUSE-Commander-Lab.jar
+          cp .github/house-desktop/HOUSE-Commander-Lab.command house-desktop-dist/HOUSE-Commander-Lab-0.12/
+          cp .github/house-desktop/HOUSE-Commander-Lab.cmd house-desktop-dist/HOUSE-Commander-Lab-0.12/
+          cp .github/house-desktop/README.txt house-desktop-dist/HOUSE-Commander-Lab-0.12/
+          chmod +x house-desktop-dist/HOUSE-Commander-Lab-0.12/HOUSE-Commander-Lab.command
           cd house-desktop-dist
-          zip -r HOUSE-Commander-Lab-0.11-Mac-Windows.zip HOUSE-Commander-Lab-0.11
+          zip -r HOUSE-Commander-Lab-0.12-Mac-Windows.zip HOUSE-Commander-Lab-0.12
 
       - name: Upload HOUSE desktop build
         uses: actions/upload-artifact@v4
         with:
-          name: HOUSE-Commander-Lab-Desktop-0.11
-          path: house-desktop-dist/HOUSE-Commander-Lab-0.11-Mac-Windows.zip
+          name: HOUSE-Commander-Lab-Desktop-0.12
+          path: house-desktop-dist/HOUSE-Commander-Lab-0.12-Mac-Windows.zip
           if-no-files-found: error
