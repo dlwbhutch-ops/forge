@@ -1,6 +1,8 @@
 package com.housecommander.desktop;
 
+import com.housecommander.core.DeckFileSnapshot;
 import com.housecommander.core.DeckSpec;
+import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
@@ -33,9 +35,12 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public final class HouseDesktopMain extends JFrame implements DesktopTournamentRunner.Listener {
@@ -60,6 +65,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     };
 
     private final JButton importButton = new JButton("Import .dck Deck");
+    private final JButton manageButton = new JButton("Manage Deck Library");
     private final JButton rosterButton = new JButton("Select Tournament Roster");
     private final JButton restoreButton = new JButton("Restore Bundled HOUSE 19");
     private final JButton testButton = new JButton("Run 1 Literal Test Game");
@@ -72,7 +78,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.9");
+        super("HOUSE Commander Lab 0.10");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -105,7 +111,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.9 • shared Deck Library / roster core • Mac + Windows"
+                "Desktop 0.10 • Deck Details + Version Management • Mac + Windows"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
@@ -124,6 +130,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
         JPanel libraryButtons = new JPanel(new GridLayout(0, 1, 6, 6));
         libraryButtons.add(importButton);
+        libraryButtons.add(manageButton);
         libraryButtons.add(rosterButton);
         libraryButtons.add(restoreButton);
         libraryButtons.add(folderButton);
@@ -183,6 +190,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
     private void wireActions() {
         importButton.addActionListener(event -> importDeck());
+        manageButton.addActionListener(event -> manageLibrary());
         rosterButton.addActionListener(event -> selectRoster());
         restoreButton.addActionListener(event -> restoreDefaultRoster());
         folderButton.addActionListener(event -> openDataFolder());
@@ -217,6 +225,265 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             refreshAll();
         } catch (Throwable error) {
             showError("Import blocked", error);
+        }
+    }
+
+    private void manageLibrary() {
+        while (true) {
+            try {
+                HousePackage template = HouseDesktopRuntime.loadTemplatePackage();
+                List<DeckSpec> library = libraryStore.allDecks(template);
+                JList<DeckSpec> list = new JList<DeckSpec>(library.toArray(new DeckSpec[0]));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                list.setCellRenderer(new DeckRenderer(libraryStore));
+                if (!library.isEmpty()) {
+                    list.setSelectedIndex(0);
+                }
+
+                JScrollPane pane = new JScrollPane(list);
+                pane.setPreferredSize(new Dimension(700, 500));
+                Object[] options = {"View Details", "Replace / Update", "Version History", "Remove", "Close"};
+                int choice = JOptionPane.showOptionDialog(
+                        this,
+                        pane,
+                        "Manage Deck Library",
+                        JOptionPane.DEFAULT_OPTION,
+                        JOptionPane.PLAIN_MESSAGE,
+                        null,
+                        options,
+                        options[0]
+                );
+                if (choice < 0 || choice == 4) {
+                    return;
+                }
+
+                DeckSpec selected = list.getSelectedValue();
+                if (selected == null) {
+                    JOptionPane.showMessageDialog(
+                            this,
+                            "Select a deck first.",
+                            "No Deck Selected",
+                            JOptionPane.WARNING_MESSAGE
+                    );
+                    continue;
+                }
+
+                if (choice == 0) {
+                    showDeckDetails(selected);
+                } else if (choice == 1) {
+                    replaceDeck(template, selected);
+                } else if (choice == 2) {
+                    showVersionHistory(template, selected);
+                } else if (choice == 3) {
+                    removeDeck(template, selected);
+                }
+                refreshAll();
+            } catch (Throwable error) {
+                showError("Deck Library unavailable", error);
+                return;
+            }
+        }
+    }
+
+    private void showDeckDetails(DeckSpec deck) {
+        try {
+            DeckFileSnapshot snapshot = libraryStore.snapshot(deck);
+            List<DeckVersion> versions = libraryStore.history(deck);
+            JTextArea text = new JTextArea();
+            text.setEditable(false);
+            text.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            text.setText(
+                    deck.deck() + "\n"
+                            + "Source: " + deck.source() + "\n"
+                            + "Forge name: " + deck.engineName() + "\n"
+                            + "Commander(s): "
+                            + (snapshot.commanderText().isEmpty()
+                            ? "(metadata not found)"
+                            : snapshot.commanderText())
+                            + "\nCards: " + snapshot.cardCount()
+                            + "\nSaved prior versions: " + versions.size()
+                            + "\n\n"
+                            + snapshot.formattedDeckList()
+            );
+            text.setCaretPosition(0);
+            JScrollPane pane = new JScrollPane(text);
+            pane.setPreferredSize(new Dimension(760, 620));
+            JOptionPane.showMessageDialog(
+                    this,
+                    pane,
+                    deck.deck() + " • Exact Deck",
+                    JOptionPane.PLAIN_MESSAGE
+            );
+        } catch (Throwable error) {
+            showError("Deck details unavailable", error);
+        }
+    }
+
+    private void replaceDeck(HousePackage template, DeckSpec deck) {
+        if (!libraryStore.isImported(deck)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Bundled HOUSE decks are read-only. Import a modified copy if you want a managed version.",
+                    "Bundled Deck",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
+        try {
+            if (runner.hasTournamentArtifacts() && libraryStore.isActive(template, deck)) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "This deck is in the active tournament roster. Reset the tournament before replacing it, "
+                                + "so the saved roster fingerprint still matches the literal results.",
+                        "Tournament Roster Locked",
+                        JOptionPane.WARNING_MESSAGE
+                );
+                return;
+            }
+        } catch (Throwable error) {
+            showError("Could not verify roster", error);
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Replace " + deck.deck());
+        chooser.setFileFilter(new FileNameExtensionFilter("Forge deck (*.dck)", "dck"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        try {
+            DeckSpec updated = libraryStore.replaceImportedDeck(
+                    template,
+                    deck,
+                    chooser.getSelectedFile()
+            );
+            JOptionPane.showMessageDialog(
+                    this,
+                    updated.deck() + " updated.\nThe prior .dck was saved in version history.",
+                    "Deck Updated",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+        } catch (Throwable error) {
+            showError("Deck update blocked", error);
+        }
+    }
+
+    private void showVersionHistory(HousePackage template, DeckSpec deck) {
+        if (!libraryStore.isImported(deck)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Bundled HOUSE decks do not have managed version history.",
+                    "No Managed History",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
+
+        try {
+            List<DeckVersion> versions = libraryStore.history(deck);
+            if (versions.isEmpty()) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "No archived versions yet. The first Replace / Update operation will create one.",
+                        "Version History",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+                return;
+            }
+
+            String[] labels = new String[versions.size()];
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            for (int i = 0; i < versions.size(); i++) {
+                DeckVersion version = versions.get(i);
+                labels[i] = format.format(new Date(version.savedAtMillis()))
+                        + " • "
+                        + version.engineName()
+                        + " • "
+                        + version.source();
+            }
+
+            JList<String> list = new JList<String>(labels);
+            list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            list.setSelectedIndex(0);
+            JScrollPane pane = new JScrollPane(list);
+            pane.setPreferredSize(new Dimension(700, 340));
+            int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    pane,
+                    "Restore an archived version of " + deck.deck() + "?",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.PLAIN_MESSAGE
+            );
+            if (choice != JOptionPane.OK_OPTION || list.getSelectedIndex() < 0) {
+                return;
+            }
+            if (runner.hasTournamentArtifacts() && libraryStore.isActive(template, deck)) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Reset the current tournament before restoring a version of an active roster deck.",
+                        "Tournament Roster Locked",
+                        JOptionPane.WARNING_MESSAGE
+                );
+                return;
+            }
+
+            DeckVersion version = versions.get(list.getSelectedIndex());
+            int confirm = JOptionPane.showConfirmDialog(
+                    this,
+                    "Restore the version saved "
+                            + format.format(new Date(version.savedAtMillis()))
+                            + "?\nThe current deck will be archived first.",
+                    "Confirm Version Restore",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE
+            );
+            if (confirm != JOptionPane.OK_OPTION) {
+                return;
+            }
+            libraryStore.restoreVersion(template, deck, version);
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Version restored. The deck's current pre-restore state is also preserved in history.",
+                    "Version Restored",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+        } catch (Throwable error) {
+            showError("Version history unavailable", error);
+        }
+    }
+
+    private void removeDeck(HousePackage template, DeckSpec deck) {
+        if (!libraryStore.isImported(deck)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Bundled HOUSE decks cannot be removed from the library.",
+                    "Bundled Deck",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Remove " + deck.deck() + " from the Deck Library?\n"
+                        + "Its current .dck and archived versions will be deleted.\n"
+                        + "An active-roster deck cannot be removed.",
+                "Remove Imported Deck",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.OK_OPTION) {
+            return;
+        }
+        try {
+            libraryStore.removeImportedDeck(template, deck);
+            JOptionPane.showMessageDialog(
+                    this,
+                    deck.deck() + " was removed from the Deck Library.",
+                    "Deck Removed",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+        } catch (Throwable error) {
+            showError("Deck removal blocked", error);
         }
     }
 
@@ -412,6 +679,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 || "RUNNING".equals(state.status)
                 || "TESTING".equals(state.status);
         importButton.setEnabled(!running);
+        manageButton.setEnabled(!running);
         rosterButton.setEnabled(!running);
         restoreButton.setEnabled(!running);
         testButton.setEnabled(!running && ForgeBridge.isAvailable());
