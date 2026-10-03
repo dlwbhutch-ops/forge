@@ -7,6 +7,7 @@ import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.Names;
 import com.housecommander.core.RosterBuilder;
+import com.housecommander.core.TextDeckImport;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -111,7 +112,17 @@ public final class DesktopDeckLibraryStore {
 
     public DeckSpec importDeck(HousePackage template, File sourceFile) throws IOException {
         requireReadable(sourceFile);
-        DeckFileSnapshot snapshot = inspectFile(sourceFile, fileStem(sourceFile.getName()));
+        byte[] normalized;
+        try (InputStream input = new FileInputStream(sourceFile)) {
+            normalized = TextDeckImport.normalizeToForgeDck(
+                    input,
+                    fileStem(sourceFile.getName())
+            );
+        }
+        DeckFileSnapshot snapshot = TextDeckImport.snapshot(
+                normalized,
+                fileStem(sourceFile.getName())
+        );
         requireOneHundred(snapshot);
 
         List<DeckSpec> current = allDecks(template);
@@ -119,7 +130,7 @@ public final class DesktopDeckLibraryStore {
         long stamp = System.currentTimeMillis();
         String relative = currentDeckPath(displayName, stamp);
         File destination = new File(HouseDesktopPaths.deckRoot(), relative);
-        copyFile(sourceFile, destination);
+        writeBytes(normalized, destination);
 
         DeckSpec imported = new DeckSpec(
                 displayName,
@@ -172,7 +183,17 @@ public final class DesktopDeckLibraryStore {
     ) throws IOException {
         requireReadable(sourceFile);
         DeckSpec current = requireImported(deck);
-        DeckFileSnapshot replacement = inspectFile(sourceFile, fileStem(sourceFile.getName()));
+        byte[] normalized;
+        try (InputStream input = new FileInputStream(sourceFile)) {
+            normalized = TextDeckImport.normalizeToForgeDck(
+                    input,
+                    fileStem(sourceFile.getName())
+            );
+        }
+        DeckFileSnapshot replacement = TextDeckImport.snapshot(
+                normalized,
+                fileStem(sourceFile.getName())
+        );
         requireOneHundred(replacement);
 
         long stamp = System.currentTimeMillis();
@@ -183,7 +204,7 @@ public final class DesktopDeckLibraryStore {
 
         String relative = currentDeckPath(current.deck(), stamp);
         File destination = new File(HouseDesktopPaths.deckRoot(), relative);
-        copyFile(sourceFile, destination);
+        writeBytes(normalized, destination);
 
         DeckSpec updated = new DeckSpec(
                 current.deck(),
@@ -563,6 +584,17 @@ public final class DesktopDeckLibraryStore {
     private static void requireReadable(File file) throws IOException {
         if (file == null || !file.isFile() || !file.canRead()) {
             throw new IOException("Selected deck file is missing or unreadable");
+        }
+    }
+
+    private static void writeBytes(byte[] bytes, File destination) throws IOException {
+        File parent = destination.getParentFile();
+        if (parent != null) {
+            HouseDesktopPaths.ensureDirectory(parent);
+        }
+        try (FileOutputStream out = new FileOutputStream(destination, false)) {
+            out.write(bytes);
+            out.getFD().sync();
         }
     }
 
