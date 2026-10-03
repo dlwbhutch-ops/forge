@@ -47,6 +47,7 @@ public final class MainActivity extends Activity {
     private TextView libraryStatus;
     private TextView libraryDetails;
     private Button importButton;
+    private Button manageLibraryButton;
     private Button rosterButton;
     private Button defaultRosterButton;
     private DeckLibraryController libraryController;
@@ -130,7 +131,7 @@ public final class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException error) {
             installedVersion = "unknown build";
         }
-        TextView version = text("Bridge 0.8 • Deck Library + Roster\n" + installedVersion, 14, false);
+        TextView version = text("Bridge 0.10 • Deck Details + Version Management\n" + installedVersion, 14, false);
         version.setAlpha(0.75f);
         root.addView(version);
 
@@ -176,6 +177,15 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(importButton);
+
+        manageLibraryButton = button("Manage Deck Library");
+        manageLibraryButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                libraryController.showLibraryManager();
+            }
+        });
+        root.addView(manageLibraryButton);
 
         rosterButton = button("Select tournament roster");
         rosterButton.setOnClickListener(new View.OnClickListener() {
@@ -354,6 +364,7 @@ public final class MainActivity extends Activity {
         pauseButton.setEnabled(running);
         resetButton.setEnabled(!running);
         importButton.setEnabled(!running);
+        manageLibraryButton.setEnabled(!running);
         rosterButton.setEnabled(!running);
         defaultRosterButton.setEnabled(!running);
 
