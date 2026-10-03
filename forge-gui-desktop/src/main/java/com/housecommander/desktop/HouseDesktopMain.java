@@ -64,7 +64,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
     };
 
-    private final JButton importButton = new JButton("Import .dck Deck");
+    private final JButton importButton = new JButton("Import .dck / ManaBox .txt");
     private final JButton manageButton = new JButton("Manage Deck Library");
     private final JButton rosterButton = new JButton("Select Tournament Roster");
     private final JButton restoreButton = new JButton("Restore Bundled HOUSE 19");
@@ -203,8 +203,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
     private void importDeck() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Import Forge Commander Deck");
-        chooser.setFileFilter(new FileNameExtensionFilter("Forge deck (*.dck)", "dck"));
+        chooser.setDialogTitle("Import Forge or ManaBox Commander Deck");
+        chooser.setFileFilter(new FileNameExtensionFilter("Commander deck (*.dck, *.txt)", "dck", "txt"));
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
         }
@@ -346,8 +346,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
 
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Replace " + deck.deck());
-        chooser.setFileFilter(new FileNameExtensionFilter("Forge deck (*.dck)", "dck"));
+        chooser.setDialogTitle("Replace " + deck.deck() + " from .dck or ManaBox .txt");
+        chooser.setFileFilter(new FileNameExtensionFilter("Commander deck (*.dck, *.txt)", "dck", "txt"));
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;
         }
