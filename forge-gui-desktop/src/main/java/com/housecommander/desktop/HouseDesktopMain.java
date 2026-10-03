@@ -78,7 +78,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.10");
+        super("HOUSE Commander Lab 0.11");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -111,7 +111,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.10 • Deck Details + Version Management • Mac + Windows"
+                "Desktop 0.11 • ManaBox + Plain-Text Import • Mac + Windows"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
