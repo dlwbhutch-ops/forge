@@ -7,9 +7,12 @@ import com.housecommander.core.HousePackage;
 import com.housecommander.core.PodSpec;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.SpectatorCardGroup;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
@@ -27,6 +30,7 @@ public final class HouseDesktopSmoke {
         System.out.println("DESKTOP_PACKAGE_PASS " + pack.validation().summary());
 
         verifyDeckManagement(pack);
+        verifySpectatorGrouping();
 
         DesktopForgeBootstrap.ensureReady(System.out::println);
         if (!ForgeBridge.isAvailable()) {
@@ -85,6 +89,56 @@ public final class HouseDesktopSmoke {
                         + live.players().size()
                         + " event="
                         + live.lastEvent()
+        );
+    }
+
+    private static void verifySpectatorGrouping() {
+        List<LiveGameState.CardState> cards =
+                new ArrayList<LiveGameState.CardState>();
+        for (int i = 0; i < 600; i++) {
+            cards.add(new LiveGameState.CardState(
+                    "Squirrel Token",
+                    false,
+                    true,
+                    false,
+                    true,
+                    false,
+                    false,
+                    false,
+                    1,
+                    1,
+                    Collections.emptyList()
+            ));
+        }
+        cards.add(new LiveGameState.CardState(
+                "Squirrel Token",
+                true,
+                true,
+                false,
+                true,
+                false,
+                false,
+                false,
+                1,
+                1,
+                Collections.singletonList("+1/+1 ×1")
+        ));
+
+        List<SpectatorCardGroup> groups = SpectatorCardGroup.group(cards);
+        if (groups.size() != 2
+                || groups.get(0).count() != 600
+                || groups.get(1).count() != 1) {
+            throw new AssertionError(
+                    "Spectator grouping failed for token swarm: groups="
+                            + groups.size()
+            );
+        }
+        System.out.println(
+                "DESKTOP_SPECTATOR_GROUPING_PASS "
+                        + cards.size()
+                        + " permanents -> "
+                        + groups.size()
+                        + " piles"
         );
     }
 
