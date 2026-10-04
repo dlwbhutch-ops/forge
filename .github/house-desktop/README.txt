@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.14 Graphical Spectator Board
+HOUSE Commander Lab 0.15 Play vs AI
 
 Requires Java 17 or newer.
 
@@ -43,3 +43,8 @@ active player, life/poison, hand/library counts, public zones, battlefield
 permanents, tap/token/P-T state, and the live stack while retaining the raw Forge
 event log for diagnostics. The UI never reads the mutable Forge game directly.
 \n\n0.14 upgrades Watch with combat-aware card tiles, card counters, commander cast/tax\nstatus, and token-safe battlefield piles. Equivalent permanents are grouped so\nlarge token boards remain inspectable instead of allocating one widget per token.\n
+
+0.15 activates Assisted Pilot mode. Choose one active Commander deck and play
+against three literal Forge AI seats. HOUSE surfaces legal priority actions and
+yes/no choices while Forge continues to resolve mana sequencing and detailed
+target-selection plumbing. The same 0.14 live battlefield remains visible in Watch.
