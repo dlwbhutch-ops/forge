@@ -1126,12 +1126,29 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         return tile;
     }
 
+    private static String cardImageIdentity(
+            LiveGameState.CardState card
+    ) {
+        if (card == null) {
+            return "";
+        }
+        if (!card.imageKey().isEmpty()
+                && HouseCardImageService.localFile(card.imageKey()) != null) {
+            return card.imageKey();
+        }
+        if (!card.imageFetchKey().isEmpty()) {
+            return card.imageFetchKey();
+        }
+        return card.imageKey();
+    }
+
     private ImageIcon cardThumbnail(LiveGameState.CardState card) {
-        if (card.imageKey().isEmpty()) {
+        String identity = cardImageIdentity(card);
+        if (identity.isEmpty()) {
             return null;
         }
 
-        String cacheKey = card.imageKey()
+        String cacheKey = identity
                 + "|thumb|"
                 + card.tapped();
         ImageIcon cached = cardThumbnailCache.get(cacheKey);
@@ -1139,10 +1156,10 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             return cached;
         }
 
-        File file = HouseCardImageService.localFile(card.imageKey());
+        File file = HouseCardImageService.localFile(identity);
         if (file == null) {
             HouseCardImageService.request(
-                    card.imageKey(),
+                    identity,
                     () -> SwingUtilities.invokeLater(() -> {
                         cardThumbnailCache.remove(cacheKey);
                         refreshWatch();
@@ -1206,10 +1223,11 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     }
 
     private void showCardZoom(LiveGameState.CardState card) {
-        File file = HouseCardImageService.localFile(card.imageKey());
+        String identity = cardImageIdentity(card);
+        File file = HouseCardImageService.localFile(identity);
         if (file == null) {
             HouseCardImageService.request(
-                    card.imageKey(),
+                    identity,
                     () -> SwingUtilities.invokeLater(() -> showCardZoom(card))
             );
             JOptionPane.showMessageDialog(
