@@ -213,6 +213,7 @@ public final class HouseDesktopSmoke {
             cards.add(new LiveGameState.CardState(
                     "Squirrel Token",
                     "t:squirrel|TBLB|1",
+                    "t:squirrel|TBLB|1",
                     false,
                     true,
                     false,
@@ -227,6 +228,7 @@ public final class HouseDesktopSmoke {
         }
         cards.add(new LiveGameState.CardState(
                 "Squirrel Token",
+                "t:squirrel|TBLB|1",
                 "t:squirrel|TBLB|1",
                 true,
                 true,
@@ -254,6 +256,7 @@ public final class HouseDesktopSmoke {
         printIdentity.add(new LiveGameState.CardState(
                 "Sol Ring",
                 "c:Sol Ring|CMM|1",
+                "c:Sol Ring|CMM|1",
                 false,
                 false,
                 false,
@@ -267,6 +270,7 @@ public final class HouseDesktopSmoke {
         ));
         printIdentity.add(new LiveGameState.CardState(
                 "Sol Ring",
+                "c:Sol Ring|LTC|1",
                 "c:Sol Ring|LTC|1",
                 false,
                 false,
