@@ -19,6 +19,7 @@ import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.ImageIcon;
+import javax.swing.JLayer;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -33,13 +34,20 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.plaf.LayerUI;
 import javax.swing.table.DefaultTableModel;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.Point;
+import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -48,6 +56,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -106,6 +115,9 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private boolean pilotDialogOpen;
     private final JLabel watchStatus = new JLabel("Spectator board ready");
     private final JPanel watchBoard = new JPanel(new GridLayout(2, 2, 8, 8));
+    private final BattlefieldLinkLayerUI battlefieldLinkLayer =
+            new BattlefieldLinkLayerUI();
+    private JLayer<JPanel> watchBoardLayer;
     private final JTextArea watchStack = new JTextArea();
     private final JTextArea watchEvents = new JTextArea();
     private final JTextArea watchLog = new JTextArea();
@@ -116,6 +128,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             new HashMap<String, String>();
     private final Map<String, String> currentSourceTargets =
             new HashMap<String, String>();
+    private List<LiveGameState.StackState> currentStackStates =
+            Collections.emptyList();
     private LiveGameState transitionCursor = LiveGameState.idle();
 
     private final Timer refreshTimer;
@@ -268,7 +282,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         panel.add(controls, BorderLayout.NORTH);
 
         watchBoard.setBorder(BorderFactory.createTitledBorder("Literal Forge Battlefield"));
-        panel.add(watchBoard, BorderLayout.CENTER);
+        watchBoardLayer = new JLayer<JPanel>(watchBoard, battlefieldLinkLayer);
+        panel.add(watchBoardLayer, BorderLayout.CENTER);
 
         watchStack.setEditable(false);
         watchStack.setLineWrap(true);
@@ -981,6 +996,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         LiveGameState live = SpectatorPlayback.visibleState();
 
         updateSpectatorTransitions(live);
+        currentStackStates = live.stackStates();
         currentStackTargets.clear();
         currentStackSources.clear();
         currentTargetSources.clear();
@@ -1043,6 +1059,9 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
         watchBoard.revalidate();
         watchBoard.repaint();
+        if (watchBoardLayer != null) {
+            watchBoardLayer.repaint();
+        }
 
         if (live.stackStates().isEmpty()) {
             watchStack.setText("Stack empty");
@@ -1109,6 +1128,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             String activePlayer
     ) {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
+        panel.putClientProperty("house.playerName", player.name());
         boolean active = player.name().equals(activePlayer);
         String status = player.lost() ? " • OUT" : (active ? " • ACTIVE" : "");
         JLabel header = new JLabel(
@@ -1129,7 +1149,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         List<SpectatorCardGroup> groups =
                 SpectatorCardGroup.group(player.battlefield());
 
-        JPanel battlefield = new JPanel(new GridLayout(3, 1, 4, 4));
+        JPanel battlefield = new JPanel(new GridLayout(4, 1, 4, 4));
+        battlefield.add(buildCombatSection(groups));
         battlefield.add(buildPermanentSection("Creatures", groups, 0));
         battlefield.add(buildPermanentSection("Lands", groups, 1));
         battlefield.add(buildPermanentSection("Other permanents", groups, 2));
@@ -1172,6 +1193,38 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         return panel;
     }
 
+    private JPanel buildCombatSection(List<SpectatorCardGroup> groups) {
+        JPanel section = new JPanel(new GridLayout(1, 2, 4, 4));
+        section.setBorder(BorderFactory.createTitledBorder("Combat"));
+        section.add(buildCombatLane("Attackers", groups, true));
+        section.add(buildCombatLane("Blockers", groups, false));
+        return section;
+    }
+
+    private JPanel buildCombatLane(
+            String title,
+            List<SpectatorCardGroup> groups,
+            boolean attackers
+    ) {
+        JPanel lane = new JPanel(new BorderLayout(3, 3));
+        lane.setBorder(BorderFactory.createTitledBorder(title));
+        JPanel tiles = new JPanel(new GridLayout(1, 0, 4, 4));
+        int added = 0;
+        for (SpectatorCardGroup group : groups) {
+            LiveGameState.CardState card = group.card();
+            if ((attackers && card.attacking())
+                    || (!attackers && card.blocking())) {
+                tiles.add(buildCardTile(group));
+                added++;
+            }
+        }
+        if (added == 0) {
+            tiles.add(new JLabel("—", JLabel.CENTER));
+        }
+        lane.add(tiles, BorderLayout.CENTER);
+        return lane;
+    }
+
     private JPanel buildPermanentSection(
             String title,
             List<SpectatorCardGroup> groups,
@@ -1184,6 +1237,10 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         int added = 0;
         for (SpectatorCardGroup group : groups) {
             if (!matchesCategory(group.card(), category)) {
+                continue;
+            }
+            if (category == 0
+                    && (group.card().attacking() || group.card().blocking())) {
                 continue;
             }
             tiles.add(buildCardTile(group));
@@ -1199,6 +1256,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private JPanel buildCardTile(SpectatorCardGroup group) {
         LiveGameState.CardState card = group.card();
         JPanel tile = new JPanel(new BorderLayout(3, 3));
+        tile.putClientProperty("house.cardName", card.name());
         tile.setBorder(BorderFactory.createEtchedBorder());
         tile.setPreferredSize(
                 card.tapped()
@@ -1285,6 +1343,133 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             pulseTile(tile, targeted || stackSource);
         }
         return tile;
+    }
+
+    private final class BattlefieldLinkLayerUI extends LayerUI<JPanel> {
+        @Override
+        public void paint(Graphics graphics, javax.swing.JComponent component) {
+            super.paint(graphics, component);
+            if (!(component instanceof JLayer<?>)
+                    || currentStackStates == null
+                    || currentStackStates.isEmpty()) {
+                return;
+            }
+
+            JLayer<?> layer = (JLayer<?>) component;
+            Component view = layer.getView();
+            if (!(view instanceof Container)) {
+                return;
+            }
+
+            Graphics2D g2 = (Graphics2D) graphics.create();
+            try {
+                g2.setRenderingHint(
+                        RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON
+                );
+                g2.setStroke(new BasicStroke(2.2f));
+                g2.setColor(component.getForeground());
+
+                for (LiveGameState.StackState stackItem : currentStackStates) {
+                    Component source = findTaggedComponent(
+                            (Container) view,
+                            "house.cardName",
+                            stackItem.source()
+                    );
+                    if (source == null) {
+                        source = findTaggedComponent(
+                                (Container) view,
+                                "house.playerName",
+                                stackItem.activatingPlayer()
+                        );
+                    }
+                    if (source == null) {
+                        continue;
+                    }
+
+                    for (String targetName : stackItem.targets()) {
+                        Component target = findTaggedComponent(
+                                (Container) view,
+                                "house.cardName",
+                                targetName
+                        );
+                        if (target == null) {
+                            target = findTaggedComponent(
+                                    (Container) view,
+                                    "house.playerName",
+                                    targetName
+                            );
+                        }
+                        if (target == null || target == source) {
+                            continue;
+                        }
+                        Point from = SwingUtilities.convertPoint(
+                                source,
+                                source.getWidth() / 2,
+                                source.getHeight() / 2,
+                                component
+                        );
+                        Point to = SwingUtilities.convertPoint(
+                                target,
+                                target.getWidth() / 2,
+                                target.getHeight() / 2,
+                                component
+                        );
+                        drawArrow(g2, from.x, from.y, to.x, to.y);
+                    }
+                }
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        private Component findTaggedComponent(
+                Container root,
+                String property,
+                String value
+        ) {
+            if (value == null || value.isEmpty()) {
+                return null;
+            }
+            for (Component child : root.getComponents()) {
+                if (child instanceof javax.swing.JComponent) {
+                    Object tag = ((javax.swing.JComponent) child)
+                            .getClientProperty(property);
+                    if (value.equals(tag)) {
+                        return child;
+                    }
+                }
+                if (child instanceof Container) {
+                    Component nested = findTaggedComponent(
+                            (Container) child,
+                            property,
+                            value
+                    );
+                    if (nested != null) {
+                        return nested;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private void drawArrow(
+                Graphics2D graphics,
+                int x1,
+                int y1,
+                int x2,
+                int y2
+        ) {
+            graphics.drawLine(x1, y1, x2, y2);
+            double angle = Math.atan2(y2 - y1, x2 - x1);
+            int size = 10;
+            int ax1 = x2 - (int) (size * Math.cos(angle - Math.PI / 6.0));
+            int ay1 = y2 - (int) (size * Math.sin(angle - Math.PI / 6.0));
+            int ax2 = x2 - (int) (size * Math.cos(angle + Math.PI / 6.0));
+            int ay2 = y2 - (int) (size * Math.sin(angle + Math.PI / 6.0));
+            graphics.drawLine(x2, y2, ax1, ay1);
+            graphics.drawLine(x2, y2, ax2, ay2);
+        }
     }
 
     private static void mergeLink(

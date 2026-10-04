@@ -6,6 +6,8 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
@@ -13,7 +15,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -71,7 +75,9 @@ public final class MainActivity extends Activity {
     private Button watchButton;
     private Button playButton;
     private TextView watchStatus;
+    private FrameLayout watchStage;
     private LinearLayout watchBoard;
+    private TargetOverlayView targetOverlay;
     private TextView watchStack;
     private TextView watchEvents;
     private TextView watchDetails;
@@ -82,6 +88,8 @@ public final class MainActivity extends Activity {
             new HashMap<String, String>();
     private final Map<String, String> currentSourceTargets =
             new HashMap<String, String>();
+    private List<LiveGameState.StackState> currentStackStates =
+            new ArrayList<LiveGameState.StackState>();
     private LiveGameState transitionCursor = LiveGameState.idle();
     private DeckLibraryController libraryController;
     private AndroidCardArtCache cardArtCache;
@@ -402,10 +410,28 @@ public final class MainActivity extends Activity {
         }));
         root.addView(playbackScroll);
 
+        watchStage = new FrameLayout(this);
         watchBoard = new LinearLayout(this);
         watchBoard.setOrientation(LinearLayout.VERTICAL);
         watchBoard.setPadding(0, dp(4), 0, dp(8));
-        root.addView(watchBoard);
+        watchStage.addView(
+                watchBoard,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+        );
+        targetOverlay = new TargetOverlayView();
+        targetOverlay.setClickable(false);
+        targetOverlay.setFocusable(false);
+        watchStage.addView(
+                targetOverlay,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                )
+        );
+        root.addView(watchStage);
 
         watchStack = text("Stack empty", 12, false);
         watchStack.setTypeface(Typeface.MONOSPACE);
@@ -764,6 +790,7 @@ public final class MainActivity extends Activity {
         LiveGameState live = SpectatorPlayback.visibleState();
 
         updateSpectatorTransitions(live);
+        currentStackStates = live.stackStates();
         currentStackTargets.clear();
         currentStackSources.clear();
         currentTargetSources.clear();
@@ -821,6 +848,9 @@ public final class MainActivity extends Activity {
             for (LiveGameState.PlayerState player : live.players()) {
                 watchBoard.addView(buildPlayerBoard(player, live.activePlayer()));
             }
+        }
+        if (targetOverlay != null) {
+            targetOverlay.invalidate();
         }
 
         if (live.stackStates().isEmpty()) {
@@ -904,6 +934,7 @@ public final class MainActivity extends Activity {
         params.setMargins(0, dp(5), 0, dp(5));
         panel.setLayoutParams(params);
         panel.setBackgroundResource(android.R.drawable.editbox_background);
+        panel.setTag("house-player:" + player.name());
 
         boolean active = player.name().equals(activePlayer);
         String status = player.lost() ? " • OUT" : (active ? " • ACTIVE" : "");
@@ -933,6 +964,7 @@ public final class MainActivity extends Activity {
         counts.setAlpha(0.8f);
         panel.addView(counts);
 
+        panel.addView(buildCombatRow(groups));
         panel.addView(buildPermanentRow("CREATURES", groups, 0));
         panel.addView(buildPermanentRow("LANDS", groups, 1));
         panel.addView(buildPermanentRow("OTHER", groups, 2));
@@ -954,6 +986,55 @@ public final class MainActivity extends Activity {
         panel.addView(zones);
 
         return panel;
+    }
+
+    private View buildCombatRow(List<SpectatorCardGroup> groups) {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.setPadding(0, dp(7), 0, dp(2));
+
+        TextView label = text("COMBAT", 11, true);
+        label.setAlpha(0.75f);
+        section.addView(label);
+        section.addView(buildCombatLane("Attackers", groups, true));
+        section.addView(buildCombatLane("Blockers", groups, false));
+        return section;
+    }
+
+    private View buildCombatLane(
+            String title,
+            List<SpectatorCardGroup> groups,
+            boolean attackers
+    ) {
+        LinearLayout lane = new LinearLayout(this);
+        lane.setOrientation(LinearLayout.VERTICAL);
+
+        TextView label = text(title, 10, true);
+        label.setAlpha(0.7f);
+        lane.addView(label);
+
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+        scroll.addView(row);
+
+        int added = 0;
+        for (SpectatorCardGroup group : groups) {
+            LiveGameState.CardState card = group.card();
+            if ((attackers && card.attacking())
+                    || (!attackers && card.blocking())) {
+                row.addView(buildCardTile(group));
+                added++;
+            }
+        }
+        if (added == 0) {
+            TextView empty = text("—", 12, false);
+            empty.setPadding(dp(8), dp(6), dp(8), dp(6));
+            row.addView(empty);
+        }
+        lane.addView(scroll);
+        return lane;
     }
 
     private View buildPermanentRow(
@@ -980,6 +1061,10 @@ public final class MainActivity extends Activity {
         int added = 0;
         for (SpectatorCardGroup group : groups) {
             if (!matchesCategory(group.card(), category)) {
+                continue;
+            }
+            if (category == 0
+                    && (group.card().attacking() || group.card().blocking())) {
                 continue;
             }
             row.addView(buildCardTile(group));
@@ -1012,6 +1097,7 @@ public final class MainActivity extends Activity {
         );
         params.setMargins(0, 0, dp(6), 0);
         tile.setLayoutParams(params);
+        tile.setTag("house-card:" + card.name());
 
         if (group.count() > 1) {
             TextView badge = text("×" + group.count(), 11, true);
@@ -1105,6 +1191,117 @@ public final class MainActivity extends Activity {
                     .start();
         }
         return tile;
+    }
+
+    private final class TargetOverlayView extends View {
+        private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        TargetOverlayView() {
+            super(MainActivity.this);
+            linePaint.setStyle(Paint.Style.STROKE);
+            linePaint.setStrokeWidth(dp(2));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (currentStackStates == null
+                    || currentStackStates.isEmpty()
+                    || watchBoard == null) {
+                return;
+            }
+
+            linePaint.setColor(
+                    watchStatus == null
+                            ? 0xFF777777
+                            : watchStatus.getCurrentTextColor()
+            );
+
+            for (LiveGameState.StackState stackItem : currentStackStates) {
+                View source = findTaggedView(
+                        watchBoard,
+                        "house-card:" + stackItem.source()
+                );
+                if (source == null) {
+                    source = findTaggedView(
+                            watchBoard,
+                            "house-player:" + stackItem.activatingPlayer()
+                    );
+                }
+                if (source == null) {
+                    continue;
+                }
+
+                for (String targetName : stackItem.targets()) {
+                    View target = findTaggedView(
+                            watchBoard,
+                            "house-card:" + targetName
+                    );
+                    if (target == null) {
+                        target = findTaggedView(
+                                watchBoard,
+                                "house-player:" + targetName
+                        );
+                    }
+                    if (target == null || target == source) {
+                        continue;
+                    }
+
+                    float[] from = centerInOverlay(source);
+                    float[] to = centerInOverlay(target);
+                    drawArrow(canvas, from[0], from[1], to[0], to[1]);
+                }
+            }
+        }
+
+        private View findTaggedView(View root, String tag) {
+            if (root == null || tag == null || tag.isEmpty()) {
+                return null;
+            }
+            if (tag.equals(root.getTag())) {
+                return root;
+            }
+            if (!(root instanceof ViewGroup)) {
+                return null;
+            }
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View match = findTaggedView(group.getChildAt(i), tag);
+                if (match != null) {
+                    return match;
+                }
+            }
+            return null;
+        }
+
+        private float[] centerInOverlay(View view) {
+            int[] viewLocation = new int[2];
+            int[] overlayLocation = new int[2];
+            view.getLocationOnScreen(viewLocation);
+            getLocationOnScreen(overlayLocation);
+            return new float[]{
+                    viewLocation[0] - overlayLocation[0] + view.getWidth() / 2f,
+                    viewLocation[1] - overlayLocation[1] + view.getHeight() / 2f
+            };
+        }
+
+        private void drawArrow(
+                Canvas canvas,
+                float x1,
+                float y1,
+                float x2,
+                float y2
+        ) {
+            canvas.drawLine(x1, y1, x2, y2, linePaint);
+            double angle = Math.atan2(y2 - y1, x2 - x1);
+            float size = dp(10);
+            float ax1 = x2 - (float) (size * Math.cos(angle - Math.PI / 6.0));
+            float ay1 = y2 - (float) (size * Math.sin(angle - Math.PI / 6.0));
+            float ax2 = x2 - (float) (size * Math.cos(angle + Math.PI / 6.0));
+            float ay2 = y2 - (float) (size * Math.sin(angle + Math.PI / 6.0));
+            canvas.drawLine(x2, y2, ax1, ay1, linePaint);
+            canvas.drawLine(x2, y2, ax2, ay2, linePaint);
+        }
     }
 
     private static void mergeLink(
