@@ -109,7 +109,7 @@ public final class DeckLibraryController {
             showError(
                     "Reset tournament first",
                     "The active roster is locked to the current checkpoint/results. "
-                            + "Use Reset tournament checkpoint before changing which decks occupy the 19 HOUSE seats."
+                            + "Use Reset tournament checkpoint before changing the active HOUSE roster."
             );
             return;
         }
@@ -134,7 +134,7 @@ public final class DeckLibraryController {
             }
 
             new AlertDialog.Builder(activity)
-                    .setTitle("Select Tournament Roster • choose exactly 19")
+                    .setTitle("Select Tournament Roster • 4 or more decks")
                     .setMultiChoiceItems(labels, checked, new DialogInterface.OnMultiChoiceClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which, boolean isChecked) {
@@ -151,11 +151,14 @@ public final class DeckLibraryController {
                                     selected.add(library.get(i));
                                 }
                             }
-                            if (selected.size() != RosterBuilder.HOUSE_ROSTER_SIZE) {
+                            if (selected.size() < RosterBuilder.MIN_ROSTER_SIZE) {
                                 showError(
                                         "Roster not saved",
-                                        "You selected " + selected.size() + " decks. HOUSE requires exactly "
-                                                + RosterBuilder.HOUSE_ROSTER_SIZE + "."
+                                        "You selected "
+                                                + selected.size()
+                                                + " decks. HOUSE requires at least "
+                                                + RosterBuilder.MIN_ROSTER_SIZE
+                                                + ". There is no fixed maximum."
                                 );
                                 return;
                             }
@@ -205,7 +208,7 @@ public final class DeckLibraryController {
         DeckLibraryStore store = new DeckLibraryStore(activity);
         int librarySize = store.allDecks(template).size();
         int rosterSize = store.loadRoster(template).size();
-        return librarySize + " decks in library • " + rosterSize + "/19 active";
+        return librarySize + " decks in library • " + rosterSize + " active • no fixed maximum";
     }
 
     public String details() throws Exception {
