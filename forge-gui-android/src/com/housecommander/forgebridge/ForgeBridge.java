@@ -921,6 +921,7 @@ public final class ForgeBridge {
                     battlefield,
                     cardNames(player.getCardsIn(ZoneType.Command)),
                     commanderStatus(player),
+                    commanderDamageStatus(player),
                     cardNames(player.getCardsIn(ZoneType.Graveyard)),
                     cardNames(player.getCardsIn(ZoneType.Exile))
             ));
@@ -1047,6 +1048,30 @@ public final class ForgeBridge {
                             + casts
                             + " • next tax +"
                             + tax
+            );
+        }
+        return out;
+    }
+
+    private static List<LiveGameState.CommanderDamageState> commanderDamageStatus(
+            Player player
+    ) {
+        List<LiveGameState.CommanderDamageState> out =
+                new ArrayList<LiveGameState.CommanderDamageState>();
+        if (player == null) {
+            return out;
+        }
+        for (Map.Entry<Card, Integer> entry : player.getCommanderDamage()) {
+            Card commander = entry.getKey();
+            Integer damage = entry.getValue();
+            if (commander == null || damage == null || damage.intValue() <= 0) {
+                continue;
+            }
+            out.add(
+                    new LiveGameState.CommanderDamageState(
+                            safeText(commander.getName()),
+                            damage.intValue()
+                    )
             );
         }
         return out;
