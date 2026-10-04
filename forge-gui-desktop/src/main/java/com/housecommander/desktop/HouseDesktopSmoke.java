@@ -13,6 +13,7 @@ import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
 import com.housecommander.forgebridge.SpectatorPlayback;
 import com.housecommander.forgebridge.SpectatorTransition;
+import com.housecommander.forgebridge.TokenArtResolver;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -38,6 +39,7 @@ public final class HouseDesktopSmoke {
         verifyDeckManagement(pack);
         verifySpectatorGrouping();
         verifySpectatorPlaybackAndTransitions();
+        verifyTokenArtResolver();
         verifyPilotDecisionBridge();
         verifyExpandedRoster(pack);
 
@@ -342,6 +344,65 @@ public final class HouseDesktopSmoke {
         System.out.println(
                 "DESKTOP_SPECTATOR_PLAYBACK_PASS transitions="
                         + transitions.size()
+        );
+    }
+
+    private static void verifyTokenArtResolver() {
+        LiveGameState.CardState squirrel = new LiveGameState.CardState(
+                "Squirrel Token",
+                "",
+                "",
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                false,
+                1,
+                1,
+                Collections.emptyList(),
+                "Token Creature - Squirrel",
+                "G"
+        );
+        TokenArtResolver.TokenArtSpec squirrelArt =
+                TokenArtResolver.resolve(squirrel);
+        if (squirrelArt == null
+                || !"squirrel".equals(squirrelArt.familyKey())
+                || squirrelArt.proceduralFallback()) {
+            throw new AssertionError("Squirrel token did not resolve themed art");
+        }
+
+        LiveGameState.CardState ferret = new LiveGameState.CardState(
+                "Nebula Ferret Token",
+                "",
+                "",
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                false,
+                2,
+                2,
+                Collections.emptyList(),
+                "Token Creature - Ferret",
+                "U"
+        );
+        TokenArtResolver.TokenArtSpec fallback =
+                TokenArtResolver.resolve(ferret);
+        if (fallback == null
+                || !fallback.proceduralFallback()
+                || fallback.signature().isEmpty()) {
+            throw new AssertionError("Unknown token did not receive fallback art");
+        }
+
+        System.out.println(
+                "DESKTOP_TOKEN_ART_PASS families="
+                        + TokenArtResolver.knownFamilyCount()
+                        + " fallback="
+                        + fallback.familyKey()
         );
     }
 

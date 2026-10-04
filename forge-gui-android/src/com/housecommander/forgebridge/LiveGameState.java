@@ -357,6 +357,8 @@ public final class LiveGameState {
         private final int power;
         private final int toughness;
         private final List<String> counters;
+        private final String typeLine;
+        private final String colorKey;
 
         public CardState(
                 String name,
@@ -373,6 +375,42 @@ public final class LiveGameState {
                 int toughness,
                 List<String> counters
         ) {
+            this(
+                    name,
+                    imageKey,
+                    imageUrl,
+                    tapped,
+                    token,
+                    faceDown,
+                    creature,
+                    land,
+                    attacking,
+                    blocking,
+                    power,
+                    toughness,
+                    counters,
+                    "",
+                    ""
+            );
+        }
+
+        public CardState(
+                String name,
+                String imageKey,
+                String imageUrl,
+                boolean tapped,
+                boolean token,
+                boolean faceDown,
+                boolean creature,
+                boolean land,
+                boolean attacking,
+                boolean blocking,
+                int power,
+                int toughness,
+                List<String> counters,
+                String typeLine,
+                String colorKey
+        ) {
             this.name = safe(name);
             this.imageKey = safe(imageKey);
             this.imageUrl = safe(imageUrl);
@@ -386,6 +424,8 @@ public final class LiveGameState {
             this.power = power;
             this.toughness = toughness;
             this.counters = immutableStrings(counters);
+            this.typeLine = safe(typeLine);
+            this.colorKey = safe(colorKey);
         }
 
         public String name() {
@@ -438,6 +478,14 @@ public final class LiveGameState {
 
         public List<String> counters() {
             return counters;
+        }
+
+        public String typeLine() {
+            return typeLine;
+        }
+
+        public String colorKey() {
+            return colorKey;
         }
     }
 }

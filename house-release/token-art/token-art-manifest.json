@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "engine": "HOUSE procedural token art",
+  "behavior": {
+    "token_art_priority": "HOUSE themed art overrides remote card art for tokens",
+    "offline": true,
+    "unknown_token_fallback": "deterministic procedural art from name, type, color, and P/T",
+    "cross_platform": ["Android", "Windows", "macOS", "Linux"]
+  },
+  "families": [
+    "treasure", "food", "clue", "blood", "map", "powerstone", "incubator",
+    "copy", "role", "squirrel", "saproling", "plant", "zombie", "spirit",
+    "goblin", "elf", "soldier", "warrior", "knight", "angel", "dragon",
+    "beast", "bird", "human", "citizen", "cat", "dog", "wolf", "vampire",
+    "demon", "devil", "elemental", "insect", "rat", "snake", "spider",
+    "faerie", "merfolk", "dinosaur", "horror", "thopter", "servo",
+    "construct", "golem", "myr", "eldrazi", "phyrexian", "germ", "pest",
+    "fractal", "army", "shard"
+  ],
+  "fallback": {
+    "family": "procedural",
+    "note": "Every other Forge token type receives deterministic generated art rather than a blank placeholder."
+  }
+}

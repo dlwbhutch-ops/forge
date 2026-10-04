@@ -907,7 +907,9 @@ public final class ForgeBridge {
                         blockers.contains(card),
                         creature ? card.getNetPower() : 0,
                         creature ? card.getNetToughness() : 0,
-                        counterLabels(card)
+                        counterLabels(card),
+                        safeText(String.valueOf(card.getType())),
+                        card.getColor() == null ? "C" : card.getColor().name()
                 ));
             }
 

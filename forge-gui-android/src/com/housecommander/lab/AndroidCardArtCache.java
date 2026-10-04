@@ -3,11 +3,18 @@ package com.housecommander.lab;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.LinearGradient;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Shader;
+import android.graphics.Typeface;
 import android.util.LruCache;
 
 import com.housecommander.forgebridge.CardArtStore;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.TokenArtResolver;
 
 import java.io.File;
 import java.util.Set;
@@ -44,7 +51,13 @@ public final class AndroidCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
-        if (card == null || card.imageUrl().isEmpty()) {
+        if (card == null) {
+            return null;
+        }
+        if (card.token()) {
+            return tokenBitmap(card, maxWidth, maxHeight, card.tapped());
+        }
+        if (card.imageUrl().isEmpty()) {
             return null;
         }
         String key = card.imageUrl()
@@ -75,7 +88,13 @@ public final class AndroidCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
-        if (card == null || card.imageUrl().isEmpty()) {
+        if (card == null) {
+            return null;
+        }
+        if (card.token()) {
+            return tokenBitmap(card, maxWidth, maxHeight, false);
+        }
+        if (card.imageUrl().isEmpty()) {
             return null;
         }
         String key = card.imageUrl()
@@ -95,6 +114,169 @@ public final class AndroidCardArtCache {
         loader.shutdownNow();
         pending.clear();
         bitmaps.evictAll();
+    }
+
+    private Bitmap tokenBitmap(
+            LiveGameState.CardState card,
+            int maxWidth,
+            int maxHeight,
+            boolean rotate
+    ) {
+        TokenArtResolver.TokenArtSpec spec = TokenArtResolver.resolve(card);
+        if (spec == null) {
+            return null;
+        }
+
+        String key = "house-token|"
+                + spec.signature()
+                + "|"
+                + rotate
+                + "|"
+                + maxWidth
+                + "x"
+                + maxHeight;
+        Bitmap ready = bitmaps.get(key);
+        if (ready != null && !ready.isRecycled()) {
+            return ready;
+        }
+
+        int sourceWidth = rotate ? maxHeight : maxWidth;
+        int sourceHeight = rotate ? maxWidth : maxHeight;
+        Bitmap source = renderTokenArt(
+                spec,
+                Math.max(64, sourceWidth),
+                Math.max(88, sourceHeight)
+        );
+        Bitmap display = rotate ? rotate90(source) : source;
+        Bitmap scaled = scaleInside(display, maxWidth, maxHeight);
+
+        if (display != scaled && !display.isRecycled()) {
+            display.recycle();
+        }
+        if (source != display
+                && source != scaled
+                && !source.isRecycled()) {
+            source.recycle();
+        }
+
+        bitmaps.put(key, scaled);
+        return scaled;
+    }
+
+    private static Bitmap renderTokenArt(
+            TokenArtResolver.TokenArtSpec spec,
+            int width,
+            int height
+    ) {
+        Bitmap image = Bitmap.createBitmap(
+                width,
+                height,
+                Bitmap.Config.ARGB_8888
+        );
+        Canvas canvas = new Canvas(image);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        RectF bounds = new RectF(0f, 0f, width, height);
+
+        int primary = 0xFF000000 | spec.primaryRgb();
+        int secondary = 0xFF000000 | spec.secondaryRgb();
+        paint.setShader(new LinearGradient(
+                0f,
+                0f,
+                width,
+                height,
+                primary,
+                secondary,
+                Shader.TileMode.CLAMP
+        ));
+        canvas.drawRoundRect(bounds, 18f, 18f, paint);
+        paint.setShader(null);
+
+        int seed = spec.signature().hashCode();
+        for (int i = 0; i < 14; i++) {
+            seed = seed * 1664525 + 1013904223;
+            float x = Math.floorMod(seed, Math.max(1, width));
+            seed = seed * 1664525 + 1013904223;
+            float y = Math.floorMod(seed, Math.max(1, height));
+            seed = seed * 1664525 + 1013904223;
+            float radius = 6 + Math.floorMod(seed, Math.max(8, width / 5));
+            paint.setColor(0x22FFFFFF + ((i % 3) << 24));
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(x, y, radius, paint);
+        }
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(2f);
+        paint.setColor(0xDDFFFFFF);
+        canvas.drawRoundRect(
+                new RectF(2f, 2f, width - 3f, height - 3f),
+                18f,
+                18f,
+                paint
+        );
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTextAlign(Paint.Align.CENTER);
+
+        float topSize = Math.max(10f, Math.min(17f, width / 7f));
+        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        paint.setTextSize(topSize);
+        paint.setColor(0xF2FFFFFF);
+        canvas.drawText(
+                ellipsize(paint, spec.displayName(), width - 14f),
+                width / 2f,
+                topSize + 8f,
+                paint
+        );
+
+        float glyphSize = Math.max(24f, Math.min(width, height) / 3f);
+        paint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
+        paint.setTextSize(glyphSize);
+        paint.setColor(0xE6FFFFFF);
+        canvas.drawText(
+                spec.glyph(),
+                width / 2f,
+                Math.max(topSize + glyphSize + 12f, height / 2f + glyphSize / 3f),
+                paint
+        );
+
+        float labelSize = Math.max(9f, Math.min(12f, width / 9f));
+        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        paint.setTextSize(labelSize);
+        paint.setColor(0xE6FFFFFF);
+        canvas.drawText(
+                ellipsize(paint, spec.familyTitle(), width - 16f),
+                width / 2f,
+                height - 28f,
+                paint
+        );
+
+        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        paint.setTextSize(Math.max(8f, labelSize - 1f));
+        paint.setColor(0xCCFFFFFF);
+        String footer = spec.powerToughness().isEmpty()
+                ? "TOKEN"
+                : "TOKEN  " + spec.powerToughness();
+        canvas.drawText(footer, width / 2f, height - 11f, paint);
+        return image;
+    }
+
+    private static String ellipsize(
+            Paint paint,
+            String text,
+            float maxWidth
+    ) {
+        if (text == null) {
+            return "";
+        }
+        if (paint.measureText(text) <= maxWidth) {
+            return text;
+        }
+        String suffix = "…";
+        String value = text;
+        while (!value.isEmpty()
+                && paint.measureText(value + suffix) > maxWidth) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value + suffix;
     }
 
     private void request(
