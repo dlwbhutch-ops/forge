@@ -927,16 +927,58 @@ public final class ForgeBridge {
         }
 
         List<String> stack = new ArrayList<String>();
+        List<LiveGameState.StackState> stackStates =
+                new ArrayList<LiveGameState.StackState>();
         for (SpellAbilityStackInstance instance : game.getStack()) {
-            String description = instance == null
-                    ? ""
-                    : safeText(instance.getStackDescription());
-            if (description.isEmpty() && instance != null && instance.getSourceCard() != null) {
-                description = safeText(instance.getSourceCard().getName());
+            if (instance == null) {
+                continue;
             }
+
+            String source = instance.getSourceCard() == null
+                    ? ""
+                    : safeText(instance.getSourceCard().getName());
+            String description = safeText(instance.getStackDescription());
+            if (description.isEmpty()) {
+                description = source;
+            }
+
+            String activatingPlayer = instance.getActivatingPlayer() == null
+                    ? ""
+                    : safeText(instance.getActivatingPlayer().getName());
+
+            List<String> targets = new ArrayList<String>();
+            try {
+                if (instance.getTargetChoices() != null) {
+                    for (Object target : instance.getTargetChoices()) {
+                        if (target instanceof Card) {
+                            Card targetCard = (Card) target;
+                            targets.add(
+                                    targetCard.isFaceDown()
+                                            ? "Face-down card"
+                                            : safeText(targetCard.getName())
+                            );
+                        } else if (target instanceof Player) {
+                            targets.add(safeText(((Player) target).getName()));
+                        } else if (target != null) {
+                            targets.add(safeText(String.valueOf(target)));
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+                // A target can disappear while Forge resolves the stack.
+            }
+
             if (!description.isEmpty()) {
                 stack.add(description);
             }
+            stackStates.add(
+                    new LiveGameState.StackState(
+                            source,
+                            description,
+                            activatingPlayer,
+                            targets
+                    )
+            );
         }
 
         String winner = "";
@@ -954,6 +996,7 @@ public final class ForgeBridge {
                 activePlayer,
                 playerStates,
                 stack,
+                stackStates,
                 game.isGameOver(),
                 winner
         );
