@@ -24,6 +24,11 @@ import java.security.NoSuchAlgorithmException;
 public final class CardArtStore {
     private static final int CONNECT_TIMEOUT_MS = 10000;
     private static final int READ_TIMEOUT_MS = 20000;
+    private static final long MIN_REQUEST_INTERVAL_MS = 110L;
+    private static final long RATE_LIMIT_COOLDOWN_MS = 5L * 60L * 1000L;
+    private static final Object PACE_LOCK = new Object();
+    private static volatile long lastRequestAt;
+    private static volatile long cooldownUntil;
 
     private CardArtStore() {
     }
@@ -51,6 +56,10 @@ public final class CardArtStore {
         File partial = new File(destination.getAbsolutePath() + ".part");
         HttpURLConnection connection = null;
         try {
+            pace();
+            if (System.currentTimeMillis() < cooldownUntil) {
+                return null;
+            }
             connection = (HttpURLConnection) new URL(imageUrl).openConnection();
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
@@ -62,6 +71,11 @@ public final class CardArtStore {
             connection.setRequestProperty("Accept", "image/*");
 
             int status = connection.getResponseCode();
+            if (status == 429) {
+                cooldownUntil = System.currentTimeMillis()
+                        + RATE_LIMIT_COOLDOWN_MS;
+                return null;
+            }
             if (status < 200 || status >= 300) {
                 throw new IOException(
                         "Card art request returned HTTP " + status
@@ -101,6 +115,25 @@ public final class CardArtStore {
             if (partial.exists() && !destination.exists()) {
                 partial.delete();
             }
+        }
+    }
+
+    private static void pace() throws IOException {
+        synchronized (PACE_LOCK) {
+            long now = System.currentTimeMillis();
+            long wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - now;
+            if (wait > 0L) {
+                try {
+                    Thread.sleep(wait);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException(
+                            "Interrupted while pacing card art request",
+                            interrupted
+                    );
+                }
+            }
+            lastRequestAt = System.currentTimeMillis();
         }
     }
 
