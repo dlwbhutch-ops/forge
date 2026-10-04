@@ -942,7 +942,6 @@ public final class MainActivity extends Activity {
         if (file == null) {
             HouseCardImageService.request(
                     card.imageKey(),
-                    card.imageFetchKey(),
                     new Runnable() {
                         @Override
                         public void run() {
@@ -990,7 +989,6 @@ public final class MainActivity extends Activity {
         if (file == null) {
             HouseCardImageService.request(
                     card.imageKey(),
-                    card.imageFetchKey(),
                     null
             );
             new AlertDialog.Builder(this)
