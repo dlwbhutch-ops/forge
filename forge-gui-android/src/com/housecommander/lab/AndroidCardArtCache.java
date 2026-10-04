@@ -122,12 +122,16 @@ public final class AndroidCardArtCache {
 
                 Bitmap display = rotate ? rotate90(source) : source;
                 Bitmap scaled = scaleInside(display, maxWidth, maxHeight);
-                if (display != source && display != scaled) {
+
+                if (display != scaled && !display.isRecycled()) {
                     display.recycle();
                 }
-                if (source != display && source != scaled && !source.isRecycled()) {
+                if (source != display
+                        && source != scaled
+                        && !source.isRecycled()) {
                     source.recycle();
                 }
+
                 bitmaps.put(key, scaled);
 
                 if (onReady != null) {
