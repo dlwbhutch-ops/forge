@@ -1074,6 +1074,13 @@ public final class ForgeBridge {
                     || eventName.contains("ChangeZone")
                     || eventName.contains("Tapped")
                     || eventName.contains("Combat")
+                    || eventName.contains("Spell")
+                    || eventName.contains("Ability")
+                    || eventName.contains("Damage")
+                    || eventName.contains("Draw")
+                    || eventName.contains("Discard")
+                    || eventName.contains("Sacrifice")
+                    || eventName.contains("Destroyed")
                     || eventName.contains("Started")
                     || eventName.contains("Finished")
                     || eventName.contains("Outcome");
