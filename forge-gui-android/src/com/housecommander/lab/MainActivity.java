@@ -927,21 +927,38 @@ public final class MainActivity extends Activity {
         return tile;
     }
 
+    private static String cardImageIdentity(
+            LiveGameState.CardState card
+    ) {
+        if (card == null) {
+            return "";
+        }
+        if (!card.imageKey().isEmpty()
+                && HouseCardImageService.localFile(card.imageKey()) != null) {
+            return card.imageKey();
+        }
+        if (!card.imageFetchKey().isEmpty()) {
+            return card.imageFetchKey();
+        }
+        return card.imageKey();
+    }
+
     private Bitmap cardBitmap(final LiveGameState.CardState card) {
-        if (card.imageKey().isEmpty()) {
+        final String identity = cardImageIdentity(card);
+        if (identity.isEmpty()) {
             return null;
         }
 
-        String cacheKey = card.imageKey() + "|thumb";
+        String cacheKey = identity + "|thumb";
         Bitmap cached = cardBitmapCache.get(cacheKey);
         if (cached != null && !cached.isRecycled()) {
             return cached;
         }
 
-        File file = HouseCardImageService.localFile(card.imageKey());
+        File file = HouseCardImageService.localFile(identity);
         if (file == null) {
             HouseCardImageService.request(
-                    card.imageKey(),
+                    identity,
                     new Runnable() {
                         @Override
                         public void run() {
@@ -985,10 +1002,11 @@ public final class MainActivity extends Activity {
     }
 
     private void showCardZoom(final LiveGameState.CardState card) {
-        File file = HouseCardImageService.localFile(card.imageKey());
+        String identity = cardImageIdentity(card);
+        File file = HouseCardImageService.localFile(identity);
         if (file == null) {
             HouseCardImageService.request(
-                    card.imageKey(),
+                    identity,
                     null
             );
             new AlertDialog.Builder(this)
