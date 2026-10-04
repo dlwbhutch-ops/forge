@@ -184,6 +184,14 @@ public final class FriendlyGameLog {
             int lastTurn = Integer.MIN_VALUE;
             for (int i = start; i < visible.size(); i++) {
                 Entry entry = visible.get(i);
+                if (entry.category() == Category.TURN) {
+                    if (out.length() > 0) {
+                        out.append("\n");
+                    }
+                    out.append(entry.text().replace("TURN ", "Turn ")).append("\n");
+                    lastTurn = entry.turn();
+                    continue;
+                }
                 if (entry.turn() > 0 && entry.turn() != lastTurn) {
                     if (out.length() > 0) {
                         out.append("\n");
@@ -191,11 +199,7 @@ public final class FriendlyGameLog {
                     out.append("Turn ").append(entry.turn()).append("\n");
                     lastTurn = entry.turn();
                 }
-                if (entry.category() == Category.TURN) {
-                    out.append("  ").append(entry.text()).append("\n");
-                } else {
-                    out.append("  ").append(entry.text()).append("\n");
-                }
+                out.append("  ").append(entry.text()).append("\n");
             }
             return out.toString().trim();
         }
