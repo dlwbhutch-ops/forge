@@ -819,7 +819,7 @@ public final class ForgeBridge {
 
         List<LiveGameState.PlayerState> playerStates =
                 new ArrayList<LiveGameState.PlayerState>();
-        for (Player player : game.getPlayers()) {
+        for (Player player : game.getRegisteredPlayers()) {
             List<LiveGameState.CardState> battlefield =
                     new ArrayList<LiveGameState.CardState>();
             for (Card card : player.getCardsIn(ZoneType.Battlefield)) {
