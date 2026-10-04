@@ -50,7 +50,8 @@ import java.util.Locale;
 import java.util.Set;
 
 public final class HouseDesktopMain extends JFrame implements DesktopTournamentRunner.Listener {
-    private static final int POD_COUNT = 95;
+    private int podCount = 95;
+    private String podRosterFingerprint = "";
 
     private final DesktopDeckLibraryStore libraryStore = new DesktopDeckLibraryStore();
     private final DesktopTournamentRunner runner = new DesktopTournamentRunner(this);
@@ -59,7 +60,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JLabel engineStatus = new JLabel("Forge engine: starting…");
     private final JLabel runStatus = new JLabel("Ready");
     private final JTextArea rosterText = new JTextArea();
-    private final JProgressBar progress = new JProgressBar(0, POD_COUNT);
+    private final JProgressBar progress = new JProgressBar(0, 95);
     private final DefaultTableModel resultsModel = new DefaultTableModel(
             new Object[]{"Rank", "Deck", "Wins", "Games", "Win Rate"},
             0
@@ -73,7 +74,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JButton importButton = new JButton("Import .dck / ManaBox .txt");
     private final JButton manageButton = new JButton("Manage Deck Library");
     private final JButton rosterButton = new JButton("Select Tournament Roster");
-    private final JButton restoreButton = new JButton("Restore Bundled HOUSE 19");
+    private final JButton restoreButton = new JButton("Restore Default HOUSE Roster");
     private final JButton testButton = new JButton("Run 1 Literal Test Game");
     private final JButton oneButton = new JButton("Run / Resume 1 Gauntlet");
     private final JButton fiveHundredButton = new JButton("Run / Resume 500 Gauntlets");
@@ -662,7 +663,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             int choice = JOptionPane.showConfirmDialog(
                     this,
                     pane,
-                    "Select exactly 19 tournament decks",
+                    "Select Tournament Roster • 4 or more decks",
                     JOptionPane.OK_CANCEL_OPTION,
                     JOptionPane.PLAIN_MESSAGE
             );
@@ -671,12 +672,14 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             }
 
             List<DeckSpec> roster = list.getSelectedValuesList();
-            if (roster.size() != RosterBuilder.HOUSE_ROSTER_SIZE) {
+            if (roster.size() < RosterBuilder.MIN_ROSTER_SIZE) {
                 JOptionPane.showMessageDialog(
                         this,
-                        "You selected " + roster.size()
-                                + " decks. HOUSE requires exactly "
-                                + RosterBuilder.HOUSE_ROSTER_SIZE + ".",
+                        "You selected "
+                                + roster.size()
+                                + " decks. HOUSE requires at least "
+                                + RosterBuilder.MIN_ROSTER_SIZE
+                                + ". There is no fixed maximum.",
                         "Roster Not Saved",
                         JOptionPane.WARNING_MESSAGE
                 );
@@ -703,7 +706,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 this,
                 "Restore the bundled HOUSE 19?\n"
                         + "Imported decks will remain in the Deck Library.",
-                "Restore Bundled HOUSE 19",
+                "Restore Default HOUSE Roster",
                 JOptionPane.OK_CANCEL_OPTION
         );
         if (choice != JOptionPane.OK_OPTION) {
@@ -771,9 +774,20 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             List<DeckSpec> library = libraryStore.allDecks(template);
             List<DeckSpec> roster = libraryStore.loadRoster(template);
             librarySummary.setText(
-                    library.size() + " decks in library • "
-                            + roster.size() + "/19 active"
+                    library.size()
+                            + " decks in library • "
+                            + roster.size()
+                            + " active • no fixed maximum"
             );
+
+            String fingerprint = RosterBuilder.fingerprint(roster);
+            if (!fingerprint.equals(podRosterFingerprint)) {
+                HousePackage activePackage =
+                        RosterBuilder.build(template, roster);
+                podCount = activePackage.schedule().size();
+                podRosterFingerprint = fingerprint;
+                progress.setMaximum(Math.max(1, podCount));
+            }
 
             StringBuilder text = new StringBuilder();
             text.append("ACTIVE HOUSE ROSTER\n\n");
@@ -798,13 +812,14 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private void refreshState() {
         DesktopStateStore.State state = runner.state();
         runStatus.setText(state.status + " • " + state.lastMessage);
-        progress.setValue(Math.min(POD_COUNT, Math.max(0, state.nextPodIndex)));
+        progress.setMaximum(Math.max(1, podCount));
+        progress.setValue(Math.min(podCount, Math.max(0, state.nextPodIndex)));
         progress.setString(
                 "Gauntlet " + state.currentGauntlet
                         + " • next pod "
-                        + (state.nextPodIndex >= POD_COUNT
+                        + (state.nextPodIndex >= podCount
                         ? "summary"
-                        : (state.nextPodIndex + 1) + "/" + POD_COUNT)
+                        : (state.nextPodIndex + 1) + "/" + podCount)
                         + " • literal games " + state.totalGames
         );
 
@@ -819,6 +834,14 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         testButton.setEnabled(!running && ForgeBridge.isAvailable());
         oneButton.setEnabled(!running && ForgeBridge.isAvailable());
         fiveHundredButton.setEnabled(!running && ForgeBridge.isAvailable());
+        oneButton.setText(
+                "Run / Resume 1 Gauntlet (" + podCount + " games)"
+        );
+        fiveHundredButton.setText(
+                "Run / Resume 500 Gauntlets ("
+                        + ((long) podCount * 500L)
+                        + " games)"
+        );
         pauseButton.setEnabled(running);
         resetButton.setEnabled(!running);
         watchButton.setEnabled(!running && ForgeBridge.isAvailable());
