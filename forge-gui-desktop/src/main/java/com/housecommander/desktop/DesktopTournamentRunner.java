@@ -5,6 +5,7 @@ import com.housecommander.core.HousePackage;
 import com.housecommander.core.Names;
 import com.housecommander.core.PodSpec;
 import com.housecommander.core.RosterBuilder;
+import com.housecommander.core.WatchPodSelection;
 import com.housecommander.forgebridge.ForgeBridge;
 
 import java.io.File;
@@ -125,10 +126,7 @@ public final class DesktopTournamentRunner {
         if (active) {
             return;
         }
-        if (selectedDecks == null || selectedDecks.size() != 4) {
-            throw new IllegalArgumentException("Watch Game requires exactly four decks");
-        }
-
+        WatchPodSelection.validateDecks(selectedDecks);
         final List<DeckSpec> decks = new ArrayList<DeckSpec>(selectedDecks);
         active = true;
         executor.execute(() -> {
