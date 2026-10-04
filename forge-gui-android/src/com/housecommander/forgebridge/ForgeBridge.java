@@ -8,6 +8,7 @@
  */
 package com.housecommander.forgebridge;
 
+import com.google.common.collect.Multiset;
 import com.google.common.eventbus.Subscribe;
 
 import forge.deck.Deck;
@@ -18,6 +19,8 @@ import forge.game.GameRules;
 import forge.game.GameType;
 import forge.game.Match;
 import forge.game.card.Card;
+import forge.game.card.CounterType;
+import forge.game.combat.Combat;
 import forge.game.event.Event;
 import forge.game.phase.PhaseHandler;
 import forge.game.spellability.SpellAbilityStackInstance;
@@ -33,9 +36,12 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -803,6 +809,14 @@ public final class ForgeBridge {
             }
         }
 
+        Combat combat = game.getCombat();
+        Set<Card> attackers = new HashSet<Card>();
+        Set<Card> blockers = new HashSet<Card>();
+        if (combat != null) {
+            attackers.addAll(combat.getAttackers());
+            blockers.addAll(combat.getAllBlockers());
+        }
+
         List<LiveGameState.PlayerState> playerStates =
                 new ArrayList<LiveGameState.PlayerState>();
         for (Player player : game.getPlayers()) {
@@ -820,8 +834,11 @@ public final class ForgeBridge {
                         card.isFaceDown(),
                         creature,
                         card.isLand(),
+                        attackers.contains(card),
+                        blockers.contains(card),
                         creature ? card.getNetPower() : 0,
-                        creature ? card.getNetToughness() : 0
+                        creature ? card.getNetToughness() : 0,
+                        counterLabels(card)
                 ));
             }
 
@@ -834,6 +851,7 @@ public final class ForgeBridge {
                     player.hasLost(),
                     battlefield,
                     cardNames(player.getCardsIn(ZoneType.Command)),
+                    commanderStatus(player),
                     cardNames(player.getCardsIn(ZoneType.Graveyard)),
                     cardNames(player.getCardsIn(ZoneType.Exile))
             ));
@@ -870,6 +888,47 @@ public final class ForgeBridge {
                 game.isGameOver(),
                 winner
         );
+    }
+
+    private static List<String> commanderStatus(Player player) {
+        List<String> out = new ArrayList<String>();
+        if (player == null) {
+            return out;
+        }
+        for (Card commander : player.getCommanders()) {
+            if (commander == null) {
+                continue;
+            }
+            int casts = player.getCommanderCast(commander);
+            int tax = Math.max(0, casts * 2);
+            out.add(
+                    safeText(commander.getName())
+                            + " • casts "
+                            + casts
+                            + " • next tax +"
+                            + tax
+            );
+        }
+        return out;
+    }
+
+    private static List<String> counterLabels(Card card) {
+        List<String> out = new ArrayList<String>();
+        if (card == null || !card.hasCounters()) {
+            return out;
+        }
+        for (Multiset.Entry<CounterType> entry : card.getCounters().entrySet()) {
+            if (entry.getElement() == null || entry.getCount() <= 0) {
+                continue;
+            }
+            out.add(
+                    safeText(entry.getElement().getName())
+                            + " ×"
+                            + entry.getCount()
+            );
+        }
+        Collections.sort(out);
+        return out;
     }
 
     private static List<String> cardNames(Iterable<Card> cards) {
