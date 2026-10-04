@@ -1,0 +1,266 @@
+name: HOUSE Commander Lab Unified Release
+
+on:
+  push:
+    branches:
+      - house-commander-lab-v05
+      - 'house-unified-release-v017-*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout HOUSE source
+        uses: actions/checkout@v4
+
+      - name: Bundle Forge rules resources
+        run: python3 .github/scripts/package-house-runtime.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Install Maven 3.8.1
+        run: |
+          curl -L --fail --retry 3 -o apache-maven-3.8.1-bin.tar.gz \
+            https://archive.apache.org/dist/maven/maven-3/3.8.1/binaries/apache-maven-3.8.1-bin.tar.gz
+          tar xf apache-maven-3.8.1-bin.tar.gz
+          echo "$GITHUB_WORKSPACE/apache-maven-3.8.1/bin" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK 35
+        run: |
+          yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager \
+            --sdk_root=${ANDROID_SDK_ROOT} \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Install Forge Android Maven plugin
+        run: |
+          mkdir -p ~/.m2/repository/com/simpligility/maven/plugins/android-maven-plugin/4.6.2
+          cd ~/.m2/repository/com/simpligility/maven/plugins/android-maven-plugin/4.6.2
+          curl -L --fail --retry 3 -o android-maven-plugin-4.6.2.jar \
+            https://github.com/Card-Forge/android-maven-plugin/releases/download/4.6.2/android-maven-plugin-4.6.2.jar
+          curl -L --fail --retry 3 -o android-maven-plugin-4.6.2.pom \
+            https://github.com/Card-Forge/android-maven-plugin/releases/download/4.6.2/android-maven-plugin-4.6.2.pom
+
+      - name: Start virtual display
+        run: |
+          command -v Xvfb >/dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          }
+          Xvfb :1 -screen 0 1280x800x24 >/tmp/house-xvfb.log 2>&1 &
+          echo "DISPLAY=:1" >> "$GITHUB_ENV"
+
+      - name: Build shared Forge and HOUSE desktop
+        run: |
+          export _JAVA_OPTIONS="-Xmx3g"
+          mvn -B install -Dmaven.test.skip=true
+
+      - name: Verify desktop literal HOUSE runtime
+        run: |
+          JAR="$(find forge-gui-desktop/target -maxdepth 1 -type f -name '*jar-with-dependencies.jar' | head -n 1)"
+          test -n "$JAR"
+          mkdir -p "$RUNNER_TEMP/house-home"
+          java -Xmx2g -Dfile.encoding=UTF-8 -Djava.awt.headless=true \
+            --add-opens=java.desktop/java.beans=ALL-UNNAMED \
+            --add-opens=java.desktop/javax.swing.border=ALL-UNNAMED \
+            --add-opens=java.desktop/javax.swing.event=ALL-UNNAMED \
+            --add-opens=java.desktop/sun.swing=ALL-UNNAMED \
+            --add-opens=java.desktop/java.awt.image=ALL-UNNAMED \
+            --add-opens=java.desktop/java.awt.color=ALL-UNNAMED \
+            --add-opens=java.desktop/sun.awt.image=ALL-UNNAMED \
+            --add-opens=java.desktop/javax.swing=ALL-UNNAMED \
+            --add-opens=java.desktop/java.awt=ALL-UNNAMED \
+            --add-opens=java.base/java.util=ALL-UNNAMED \
+            --add-opens=java.base/java.lang=ALL-UNNAMED \
+            --add-opens=java.base/java.lang.reflect=ALL-UNNAMED \
+            --add-opens=java.base/java.text=ALL-UNNAMED \
+            --add-opens=java.desktop/java.awt.font=ALL-UNNAMED \
+            --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED \
+            --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+            --add-opens=java.base/java.nio=ALL-UNNAMED \
+            --add-opens=java.base/java.math=ALL-UNNAMED \
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+            --add-opens=java.base/java.net=ALL-UNNAMED \
+            -Duser.home="$RUNNER_TEMP/house-home" \
+            -cp "$JAR" \
+            com.housecommander.desktop.HouseDesktopSmoke
+
+      - name: Build Android APK
+        run: |
+          export _JAVA_OPTIONS="-Xmx2g --add-exports=java.base/sun.security.pkcs=ALL-UNNAMED --add-exports=java.base/sun.security.x509=ALL-UNNAMED --add-exports=java.base/sun.security.util=ALL-UNNAMED"
+          mvn -s "$GITHUB_WORKSPACE/.mvn/local-settings.xml" -U -B clean verify \
+            -pl forge-gui-android -am \
+            -P android-debug \
+            -Dandroid.sdk.path=${ANDROID_SDK_ROOT} \
+            -Dandroid.buildToolsVersion=35.0.0 \
+            -Dandroid.renameManifestPackage=com.housecommander.labapp \
+            -Dhouse.buildNumber=${GITHUB_RUN_NUMBER} \
+            -Dhouse.androidVersionCode=$((200008000 + GITHUB_RUN_NUMBER)) \
+            -Dmaven.test.skip=true
+
+      - name: Sign Android APK
+        run: |
+          APK="$(find forge-gui-android/target -maxdepth 1 -type f -name '*.apk' ! -name '*debugSigned*' | head -n 1)"
+          test -n "$APK"
+          java -jar forge-gui-android/tools/uber-apk-signer.jar -a "$APK" --debug
+          SIGNED="$(find forge-gui-android/target -maxdepth 1 -type f -name '*debugSigned*.apk' | head -n 1)"
+          test -n "$SIGNED"
+          echo "HOUSE_SIGNED_APK=$SIGNED" >> "$GITHUB_ENV"
+
+      - name: Verify Android/Forge literal runtime
+        run: bash .github/scripts/smoke-house-runtime.sh
+
+      - name: Download platform Java 17 runtimes
+        run: |
+          set -euo pipefail
+          mkdir -p house-release/runtimes
+
+          fetch_zip() {
+            name="$1"
+            url="$2"
+            mkdir -p "house-release/runtimes/$name-unpack"
+            curl -L --fail --retry 4 --retry-delay 3 -o "house-release/runtimes/$name.zip" "$url"
+            unzip -q "house-release/runtimes/$name.zip" -d "house-release/runtimes/$name-unpack"
+            root="$(find "house-release/runtimes/$name-unpack" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+            test -n "$root"
+            mv "$root" "house-release/runtimes/$name"
+            rm -rf "house-release/runtimes/$name-unpack" "house-release/runtimes/$name.zip"
+          }
+
+          fetch_tgz() {
+            name="$1"
+            url="$2"
+            mkdir -p "house-release/runtimes/$name-unpack"
+            curl -L --fail --retry 4 --retry-delay 3 -o "house-release/runtimes/$name.tar.gz" "$url"
+            tar -xzf "house-release/runtimes/$name.tar.gz" -C "house-release/runtimes/$name-unpack"
+            root="$(find "house-release/runtimes/$name-unpack" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+            test -n "$root"
+            mv "$root" "house-release/runtimes/$name"
+            rm -rf "house-release/runtimes/$name-unpack" "house-release/runtimes/$name.tar.gz"
+          }
+
+          fetch_zip windows-x64 \
+            "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse"
+          fetch_tgz linux-x64 \
+            "https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jre/hotspot/normal/eclipse"
+          fetch_tgz macos-x64 \
+            "https://api.adoptium.net/v3/binary/latest/17/ga/mac/x64/jre/hotspot/normal/eclipse"
+          fetch_tgz macos-aarch64 \
+            "https://api.adoptium.net/v3/binary/latest/17/ga/mac/aarch64/jre/hotspot/normal/eclipse"
+
+      - name: Package all supported platforms
+        run: |
+          set -euo pipefail
+          JAR="$(find forge-gui-desktop/target -maxdepth 1 -type f -name '*jar-with-dependencies.jar' | head -n 1)"
+          test -n "$JAR"
+          OUT="$GITHUB_WORKSPACE/house-release/dist"
+          mkdir -p "$OUT"
+
+          package_desktop() {
+            folder="$1"
+            runtime="$2"
+            launcher="$3"
+
+            mkdir -p "$OUT/$folder"
+            cp "$JAR" "$OUT/$folder/HOUSE-Commander-Lab.jar"
+            cp -a "house-release/runtimes/$runtime" "$OUT/$folder/runtime"
+            cp ".github/house-desktop/$launcher" "$OUT/$folder/"
+            cp ".github/house-desktop/README-ALL-PLATFORMS.txt" "$OUT/$folder/README.txt"
+
+            case "$launcher" in
+              *.command|*.sh) chmod +x "$OUT/$folder/$launcher" ;;
+            esac
+
+            (
+              cd "$OUT"
+              zip -qr "$folder.zip" "$folder"
+            )
+          }
+
+          package_desktop "HOUSE-Commander-Lab-0.17-Windows-x64" \
+            "windows-x64" "HOUSE-Commander-Lab.cmd"
+          package_desktop "HOUSE-Commander-Lab-0.17-macOS-Intel" \
+            "macos-x64" "HOUSE-Commander-Lab.command"
+          package_desktop "HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon" \
+            "macos-aarch64" "HOUSE-Commander-Lab.command"
+          package_desktop "HOUSE-Commander-Lab-0.17-Linux-x64" \
+            "linux-x64" "HOUSE-Commander-Lab.sh"
+
+          cp "$HOUSE_SIGNED_APK" "$OUT/HOUSE-Commander-Lab-0.17-Android.apk"
+          cp ".github/house-desktop/README-ALL-PLATFORMS.txt" "$OUT/README.txt"
+
+          cat > "$OUT/RELEASE-MANIFEST.txt" <<EOF
+          HOUSE Commander Lab 0.17 Unified Distribution
+          Git commit: $GITHUB_SHA
+          Git branch: $GITHUB_REF_NAME
+          Workflow run: $GITHUB_RUN_ID
+
+          Packages:
+          - Windows x64 self-contained desktop runtime
+          - macOS Intel self-contained desktop runtime
+          - macOS Apple Silicon self-contained desktop runtime
+          - Linux x64 self-contained desktop runtime
+          - Android signed debug APK
+
+          Shared capabilities:
+          Deck Library + ManaBox import
+          Literal Forge Commander engine
+          Variable-size tournaments + checkpoints
+          Live Watch battlefield
+          Exact-print cached card art
+          Assisted Play vs AI
+          EOF
+
+          (
+            cd "$OUT"
+            sha256sum \
+              HOUSE-Commander-Lab-0.17-Windows-x64.zip \
+              HOUSE-Commander-Lab-0.17-macOS-Intel.zip \
+              HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon.zip \
+              HOUSE-Commander-Lab-0.17-Linux-x64.zip \
+              HOUSE-Commander-Lab-0.17-Android.apk \
+              > SHA256SUMS.txt
+
+            zip -q HOUSE-Commander-Lab-0.17-All-Platforms.zip \
+              HOUSE-Commander-Lab-0.17-Windows-x64.zip \
+              HOUSE-Commander-Lab-0.17-macOS-Intel.zip \
+              HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon.zip \
+              HOUSE-Commander-Lab-0.17-Linux-x64.zip \
+              HOUSE-Commander-Lab-0.17-Android.apk \
+              README.txt \
+              RELEASE-MANIFEST.txt \
+              SHA256SUMS.txt
+          )
+
+      - name: Upload unified HOUSE release
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-All-Platforms
+          path: |
+            house-release/dist/HOUSE-Commander-Lab-0.17-All-Platforms.zip
+            house-release/dist/HOUSE-Commander-Lab-0.17-Windows-x64.zip
+            house-release/dist/HOUSE-Commander-Lab-0.17-macOS-Intel.zip
+            house-release/dist/HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon.zip
+            house-release/dist/HOUSE-Commander-Lab-0.17-Linux-x64.zip
+            house-release/dist/HOUSE-Commander-Lab-0.17-Android.apk
+            house-release/dist/RELEASE-MANIFEST.txt
+            house-release/dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Upload unified release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-Diagnostics
+          path: |
+            house-runtime-smoke.log
+            house-literal-smoke.log
+          if-no-files-found: warn
