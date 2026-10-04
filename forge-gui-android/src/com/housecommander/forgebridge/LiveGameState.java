@@ -23,6 +23,7 @@ public final class LiveGameState {
     private final String activePlayer;
     private final List<PlayerState> players;
     private final List<String> stack;
+    private final List<StackState> stackStates;
     private final boolean gameOver;
     private final String winner;
 
@@ -37,6 +38,32 @@ public final class LiveGameState {
             boolean gameOver,
             String winner
     ) {
+        this(
+                sequence,
+                lastEvent,
+                turn,
+                phase,
+                activePlayer,
+                players,
+                stack,
+                Collections.emptyList(),
+                gameOver,
+                winner
+        );
+    }
+
+    public LiveGameState(
+            long sequence,
+            String lastEvent,
+            int turn,
+            String phase,
+            String activePlayer,
+            List<PlayerState> players,
+            List<String> stack,
+            List<StackState> stackStates,
+            boolean gameOver,
+            String winner
+    ) {
         this.sequence = sequence;
         this.lastEvent = safe(lastEvent);
         this.turn = turn;
@@ -44,6 +71,7 @@ public final class LiveGameState {
         this.activePlayer = safe(activePlayer);
         this.players = immutable(players);
         this.stack = immutableStrings(stack);
+        this.stackStates = immutable(stackStates);
         this.gameOver = gameOver;
         this.winner = safe(winner);
     }
@@ -104,6 +132,10 @@ public final class LiveGameState {
         return stack;
     }
 
+    public List<StackState> stackStates() {
+        return stackStates;
+    }
+
     public boolean gameOver() {
         return gameOver;
     }
@@ -132,6 +164,42 @@ public final class LiveGameState {
 
     private static String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    /** Read-only structured stack state, including literal Forge targets. */
+    public static final class StackState {
+        private final String source;
+        private final String description;
+        private final String activatingPlayer;
+        private final List<String> targets;
+
+        public StackState(
+                String source,
+                String description,
+                String activatingPlayer,
+                List<String> targets
+        ) {
+            this.source = safe(source);
+            this.description = safe(description);
+            this.activatingPlayer = safe(activatingPlayer);
+            this.targets = immutableStrings(targets);
+        }
+
+        public String source() {
+            return source;
+        }
+
+        public String description() {
+            return description;
+        }
+
+        public String activatingPlayer() {
+            return activatingPlayer;
+        }
+
+        public List<String> targets() {
+            return targets;
+        }
     }
 
     /** Read-only player state for the spectator board. */
