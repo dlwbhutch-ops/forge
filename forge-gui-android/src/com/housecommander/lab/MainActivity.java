@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
@@ -14,6 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -38,7 +40,9 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class MainActivity extends Activity {
     private static final int DEFAULT_POD_COUNT = 95;
@@ -68,6 +72,8 @@ public final class MainActivity extends Activity {
     private TextView watchStack;
     private TextView watchDetails;
     private DeckLibraryController libraryController;
+    private AndroidCardArtCache cardArtCache;
+    private final Set<String> seenVisualPiles = new HashSet<String>();
     private long shownPilotDecisionId = -1L;
     private boolean pilotDialogOpen;
 
@@ -97,6 +103,8 @@ public final class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 100);
         }
 
+        cardArtCache = new AndroidCardArtCache(this);
+
         libraryController = new DeckLibraryController(this, new DeckLibraryController.Callback() {
             @Override
             public void onLibraryChanged() {
@@ -124,6 +132,9 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacks(refresh);
+        if (cardArtCache != null) {
+            cardArtCache.shutdown();
+        }
         super.onDestroy();
     }
 
@@ -153,7 +164,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.15 • Play vs AI • Unified HOUSE Lab\n"
+                "Bridge 0.16 • Real Card Battlefield • Unified HOUSE Lab\n"
                         + installedVersion,
                 14,
                 false
@@ -659,6 +670,10 @@ public final class MainActivity extends Activity {
         RunState run = new StateStore(this).load();
         LiveGameState live = ForgeBridge.liveGameState();
 
+        if (live.sequence() <= 1L) {
+            seenVisualPiles.clear();
+        }
+
         if (live.sequence() > 1L) {
             String winner = live.winner().isEmpty() ? "" : " • winner " + live.winner();
             watchStatus.setText(
@@ -844,44 +859,146 @@ public final class MainActivity extends Activity {
 
     private View buildCardTile(SpectatorCardGroup group) {
         LiveGameState.CardState card = group.card();
-        String count = group.count() > 1 ? " ×" + group.count() : "";
 
-        StringBuilder value = new StringBuilder();
-        if (card.tapped()) {
-            value.append("↷ ");
-        }
-        value.append(card.name()).append(count).append("\n");
-
-        if (card.creature()) {
-            value.append(card.power()).append("/").append(card.toughness());
-        }
-        if (card.attacking()) {
-            appendDetail(value, "ATTACK");
-        }
-        if (card.blocking()) {
-            appendDetail(value, "BLOCK");
-        }
-        if (card.token()) {
-            appendDetail(value, "TOKEN");
-        }
-        if (!card.counters().isEmpty()) {
-            appendDetail(value, join(card.counters()));
-        }
-
-        TextView tile = text(value.toString().trim(), 11, true);
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER);
-        tile.setMinWidth(dp(128));
-        tile.setMinHeight(dp(76));
-        tile.setPadding(dp(8), dp(6), dp(8), dp(6));
+        tile.setPadding(dp(4), dp(4), dp(4), dp(4));
         tile.setBackgroundResource(android.R.drawable.editbox_background);
 
+        int tileWidth = card.tapped() ? dp(158) : dp(116);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                dp(148),
+                tileWidth,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        params.setMargins(0, 0, dp(5), 0);
+        params.setMargins(0, 0, dp(6), 0);
         tile.setLayoutParams(params);
+
+        if (group.count() > 1) {
+            TextView badge = text("×" + group.count(), 11, true);
+            badge.setGravity(Gravity.CENTER);
+            tile.addView(badge);
+        }
+
+        ImageView face = new ImageView(this);
+        face.setAdjustViewBounds(true);
+        face.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        face.setContentDescription(card.name());
+
+        Bitmap art = cardArtCache.cardBitmap(
+                card,
+                card.tapped() ? dp(146) : dp(104),
+                card.tapped() ? dp(100) : dp(146),
+                this::refreshWatchView
+        );
+        if (art != null) {
+            face.setImageBitmap(art);
+            tile.addView(
+                    face,
+                    new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            card.tapped() ? dp(104) : dp(150)
+                    )
+            );
+        } else {
+            TextView placeholder = text(
+                    card.name()
+                            + "\n"
+                            + (card.imageUrl().isEmpty()
+                            ? "art unavailable"
+                            : "loading art…"),
+                    11,
+                    true
+            );
+            placeholder.setGravity(Gravity.CENTER);
+            placeholder.setMinHeight(card.tapped() ? dp(90) : dp(134));
+            tile.addView(placeholder);
+        }
+
+        String details = cardDetail(card);
+        TextView state = text(details, 10, false);
+        state.setGravity(Gravity.CENTER);
+        state.setPadding(0, dp(3), 0, 0);
+        tile.addView(state);
+
+        tile.setContentDescription(card.name() + " • " + details);
+        tile.setOnClickListener(v -> showCardZoom(card));
+
+        String visualKey = card.imageKey()
+                + "|"
+                + card.name()
+                + "|"
+                + card.tapped()
+                + "|"
+                + details
+                + "|"
+                + group.count();
+        if (seenVisualPiles.add(visualKey)) {
+            tile.setAlpha(0f);
+            tile.setTranslationY(dp(12));
+            tile.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(180L)
+                    .start();
+        }
         return tile;
+    }
+
+    private void showCardZoom(LiveGameState.CardState card) {
+        Bitmap art = cardArtCache.zoomBitmap(
+                card,
+                dp(420),
+                dp(586),
+                () -> showCardZoom(card)
+        );
+        if (art == null || isFinishing()) {
+            return;
+        }
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(8), dp(8), dp(8), dp(8));
+
+        ImageView image = new ImageView(this);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(art);
+        content.addView(image);
+
+        TextView detail = text(cardDetail(card), 12, false);
+        detail.setGravity(Gravity.CENTER);
+        detail.setPadding(0, dp(6), 0, 0);
+        content.addView(detail);
+
+        new AlertDialog.Builder(this)
+                .setTitle(card.name())
+                .setView(content)
+                .setPositiveButton("Close", null)
+                .show();
+    }
+
+    private static String cardDetail(LiveGameState.CardState card) {
+        StringBuilder out = new StringBuilder();
+        if (card.creature()) {
+            out.append(card.power()).append("/").append(card.toughness());
+        }
+        if (card.tapped()) {
+            appendDetail(out, "TAPPED");
+        }
+        if (card.attacking()) {
+            appendDetail(out, "ATTACK");
+        }
+        if (card.blocking()) {
+            appendDetail(out, "BLOCK");
+        }
+        if (card.token()) {
+            appendDetail(out, "TOKEN");
+        }
+        if (!card.counters().isEmpty()) {
+            appendDetail(out, join(card.counters()));
+        }
+        return out.length() == 0 ? "ready" : out.toString();
     }
 
     private static boolean matchesCategory(
