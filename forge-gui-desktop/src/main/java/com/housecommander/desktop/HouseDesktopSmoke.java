@@ -325,10 +325,13 @@ public final class HouseDesktopSmoke {
         }
 
         SpectatorPlayback.reset(before);
-        SpectatorPlayback.record(after);
         SpectatorPlayback.pause();
-        if (SpectatorPlayback.latestState().sequence() != 3L) {
-            throw new AssertionError("Spectator playback did not retain latest frame");
+        SpectatorPlayback.record(after);
+        if (SpectatorPlayback.latestState().sequence() != 3L
+                || SpectatorPlayback.visibleState().sequence() != 2L) {
+            throw new AssertionError(
+                    "Spectator pause did not preserve the visible frame"
+            );
         }
         SpectatorPlayback.nextAction();
         if (SpectatorPlayback.visibleState().sequence() != 3L) {
