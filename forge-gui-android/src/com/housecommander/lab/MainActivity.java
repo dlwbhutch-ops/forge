@@ -91,6 +91,8 @@ public final class MainActivity extends Activity {
             new HashMap<String, String>();
     private List<LiveGameState.StackState> currentStackStates =
             new ArrayList<LiveGameState.StackState>();
+    private List<LiveGameState.CombatLinkState> currentCombatLinks =
+            new ArrayList<LiveGameState.CombatLinkState>();
     private LiveGameState transitionCursor = LiveGameState.idle();
     private DeckLibraryController libraryController;
     private AndroidCardArtCache cardArtCache;
@@ -792,6 +794,7 @@ public final class MainActivity extends Activity {
 
         updateSpectatorTransitions(live);
         currentStackStates = live.stackStates();
+        currentCombatLinks = live.combatLinks();
         currentStackTargets.clear();
         currentStackSources.clear();
         currentTargetSources.clear();
@@ -1196,23 +1199,36 @@ public final class MainActivity extends Activity {
 
     private final class TargetOverlayView extends View {
         private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint combatPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint flightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint floatingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final List<FlightVisual> flights = new ArrayList<FlightVisual>();
+        private final List<FloatingVisual> floatingVisuals =
+                new ArrayList<FloatingVisual>();
 
         TargetOverlayView() {
             super(MainActivity.this);
             linePaint.setStyle(Paint.Style.STROKE);
             linePaint.setStrokeWidth(dp(2));
+            combatPaint.setStyle(Paint.Style.STROKE);
+            combatPaint.setStrokeWidth(dp(2));
             flightPaint.setStyle(Paint.Style.STROKE);
             flightPaint.setStrokeWidth(dp(2));
             flightPaint.setTextSize(dp(12));
+            floatingPaint.setStyle(Paint.Style.FILL);
+            floatingPaint.setTextSize(dp(14));
+            floatingPaint.setTypeface(
+                    Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            );
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             if (((currentStackStates == null || currentStackStates.isEmpty())
-                    && flights.isEmpty())
+                    && (currentCombatLinks == null || currentCombatLinks.isEmpty())
+                    && flights.isEmpty()
+                    && floatingVisuals.isEmpty())
                     || watchBoard == null) {
                 return;
             }
@@ -1221,7 +1237,15 @@ public final class MainActivity extends Activity {
                     ? 0xFF777777
                     : watchStatus.getCurrentTextColor();
             linePaint.setColor(visualColor);
+            combatPaint.setColor(visualColor);
+            combatPaint.setPathEffect(
+                    new android.graphics.DashPathEffect(
+                            new float[]{dp(8), dp(6)},
+                            0f
+                    )
+            );
             flightPaint.setColor(visualColor);
+            floatingPaint.setColor(visualColor);
 
             if (currentStackStates != null) {
                 for (LiveGameState.StackState stackItem : currentStackStates) {
@@ -1256,12 +1280,76 @@ public final class MainActivity extends Activity {
 
                     float[] from = centerInOverlay(source);
                     float[] to = centerInOverlay(target);
-                        drawArrow(canvas, from[0], from[1], to[0], to[1]);
+                        drawArrow(
+                                canvas,
+                                from[0],
+                                from[1],
+                                to[0],
+                                to[1],
+                                linePaint
+                        );
                     }
                 }
             }
 
+            drawCombatLinks(canvas);
             drawFlights(canvas);
+            drawFloatingVisuals(canvas);
+        }
+
+        private void drawCombatLinks(Canvas canvas) {
+            if (currentCombatLinks == null || currentCombatLinks.isEmpty()) {
+                return;
+            }
+
+            for (LiveGameState.CombatLinkState combatLink : currentCombatLinks) {
+                View attacker = findTaggedView(
+                        watchBoard,
+                        "house-card:" + combatLink.attacker()
+                );
+                if (attacker == null) {
+                    continue;
+                }
+                float[] from = centerInOverlay(attacker);
+
+                if (!combatLink.blockers().isEmpty()) {
+                    for (String blockerName : combatLink.blockers()) {
+                        View blocker = findTaggedView(
+                                watchBoard,
+                                "house-card:" + blockerName
+                        );
+                        if (blocker == null || blocker == attacker) {
+                            continue;
+                        }
+                        float[] to = centerInOverlay(blocker);
+                        drawArrow(
+                                canvas,
+                                from[0],
+                                from[1],
+                                to[0],
+                                to[1],
+                                combatPaint
+                        );
+                    }
+                } else if (!combatLink.defender().isEmpty()) {
+                    View defender = findTaggedView(
+                            watchBoard,
+                            "house-player:" + combatLink.defender()
+                    );
+                    if (defender != null && defender != attacker) {
+                        float[] to = centerInOverlay(defender);
+                        to[1] -= Math.max(0f, defender.getHeight() / 2f - dp(18));
+                        drawArrow(
+                                canvas,
+                                from[0],
+                                from[1],
+                                to[0],
+                                to[1],
+                                combatPaint
+                        );
+                    }
+                }
+            }
         }
 
         private void queueZoneFlight(SpectatorTransition.Transition transition) {
@@ -1294,6 +1382,7 @@ public final class MainActivity extends Activity {
 
         private void clearFlights() {
             flights.clear();
+            floatingVisuals.clear();
             invalidate();
         }
 
@@ -1355,6 +1444,81 @@ public final class MainActivity extends Activity {
             }
         }
 
+        private void queueFloatingVisual(
+                SpectatorTransition.Transition transition
+        ) {
+            if (transition == null || transition.player().isEmpty()) {
+                return;
+            }
+
+            String label = "";
+            if (transition.kind() == SpectatorTransition.Kind.LIFE) {
+                label = "♥ " + transition.detail();
+            } else if (transition.kind() == SpectatorTransition.Kind.POISON) {
+                label = "☠ " + transition.detail();
+            } else if (transition.kind()
+                    == SpectatorTransition.Kind.COMMANDER_DAMAGE) {
+                label = transition.subject()
+                        + " CMD "
+                        + transition.detail();
+            }
+            if (label.isEmpty()) {
+                return;
+            }
+
+            floatingVisuals.add(
+                    new FloatingVisual(
+                            transition.player(),
+                            label,
+                            System.currentTimeMillis()
+                    )
+            );
+            while (floatingVisuals.size() > 24) {
+                floatingVisuals.remove(0);
+            }
+            postInvalidateOnAnimation();
+        }
+
+        private void drawFloatingVisuals(Canvas canvas) {
+            if (floatingVisuals.isEmpty()) {
+                return;
+            }
+
+            long now = System.currentTimeMillis();
+            Iterator<FloatingVisual> iterator = floatingVisuals.iterator();
+            while (iterator.hasNext()) {
+                FloatingVisual visual = iterator.next();
+                long age = now - visual.startedAt;
+                if (age > 1050L) {
+                    iterator.remove();
+                    continue;
+                }
+
+                View player = findTaggedView(
+                        watchBoard,
+                        "house-player:" + visual.player
+                );
+                if (player == null) {
+                    continue;
+                }
+
+                float[] anchor = centerInOverlay(player);
+                anchor[1] -= Math.max(0f, player.getHeight() / 2f - dp(30));
+                float progress = Math.min(1f, age / 900f);
+                float y = anchor[1] - dp(40) * progress;
+                canvas.drawText(
+                        visual.text,
+                        anchor[0] - floatingPaint.measureText(visual.text) / 2f,
+                        y,
+                        floatingPaint
+                );
+            }
+
+            if (!floatingVisuals.isEmpty()) {
+                postInvalidateOnAnimation();
+            }
+        }
+
         private String transitionZone(SpectatorTransition.Kind kind) {
             if (kind == SpectatorTransition.Kind.GRAVEYARD_ADD) {
                 return "graveyard";
@@ -1366,6 +1530,22 @@ public final class MainActivity extends Activity {
                 return "command";
             }
             return "";
+        }
+
+        private final class FloatingVisual {
+            private final String player;
+            private final String text;
+            private final long startedAt;
+
+            private FloatingVisual(
+                    String player,
+                    String text,
+                    long startedAt
+            ) {
+                this.player = player == null ? "" : player;
+                this.text = text == null ? "" : text;
+                this.startedAt = startedAt;
+            }
         }
 
         private final class FlightVisual {
@@ -1429,17 +1609,18 @@ public final class MainActivity extends Activity {
                 float x1,
                 float y1,
                 float x2,
-                float y2
+                float y2,
+                Paint paint
         ) {
-            canvas.drawLine(x1, y1, x2, y2, linePaint);
+            canvas.drawLine(x1, y1, x2, y2, paint);
             double angle = Math.atan2(y2 - y1, x2 - x1);
             float size = dp(10);
             float ax1 = x2 - (float) (size * Math.cos(angle - Math.PI / 6.0));
             float ay1 = y2 - (float) (size * Math.sin(angle - Math.PI / 6.0));
             float ax2 = x2 - (float) (size * Math.cos(angle + Math.PI / 6.0));
             float ay2 = y2 - (float) (size * Math.sin(angle + Math.PI / 6.0));
-            canvas.drawLine(x2, y2, ax1, ay1, linePaint);
-            canvas.drawLine(x2, y2, ax2, ay2, linePaint);
+            canvas.drawLine(x2, y2, ax1, ay1, paint);
+            canvas.drawLine(x2, y2, ax2, ay2, paint);
         }
     }
 
@@ -1497,6 +1678,7 @@ public final class MainActivity extends Activity {
             for (SpectatorTransition.Transition transition : transitions) {
                 if (targetOverlay != null) {
                     targetOverlay.queueZoneFlight(transition);
+                    targetOverlay.queueFloatingVisual(transition);
                 }
                 String line = "T" + frame.turn()
                         + " " + frame.phase()

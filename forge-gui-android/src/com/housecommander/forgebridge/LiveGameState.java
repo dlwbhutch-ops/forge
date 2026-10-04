@@ -24,6 +24,7 @@ public final class LiveGameState {
     private final List<PlayerState> players;
     private final List<String> stack;
     private final List<StackState> stackStates;
+    private final List<CombatLinkState> combatLinks;
     private final boolean gameOver;
     private final String winner;
 
@@ -47,6 +48,7 @@ public final class LiveGameState {
                 players,
                 stack,
                 Collections.emptyList(),
+                Collections.emptyList(),
                 gameOver,
                 winner
         );
@@ -64,6 +66,34 @@ public final class LiveGameState {
             boolean gameOver,
             String winner
     ) {
+        this(
+                sequence,
+                lastEvent,
+                turn,
+                phase,
+                activePlayer,
+                players,
+                stack,
+                stackStates,
+                Collections.emptyList(),
+                gameOver,
+                winner
+        );
+    }
+
+    public LiveGameState(
+            long sequence,
+            String lastEvent,
+            int turn,
+            String phase,
+            String activePlayer,
+            List<PlayerState> players,
+            List<String> stack,
+            List<StackState> stackStates,
+            List<CombatLinkState> combatLinks,
+            boolean gameOver,
+            String winner
+    ) {
         this.sequence = sequence;
         this.lastEvent = safe(lastEvent);
         this.turn = turn;
@@ -72,6 +102,7 @@ public final class LiveGameState {
         this.players = immutable(players);
         this.stack = immutableStrings(stack);
         this.stackStates = immutable(stackStates);
+        this.combatLinks = immutable(combatLinks);
         this.gameOver = gameOver;
         this.winner = safe(winner);
     }
@@ -134,6 +165,10 @@ public final class LiveGameState {
 
     public List<StackState> stackStates() {
         return stackStates;
+    }
+
+    public List<CombatLinkState> combatLinks() {
+        return combatLinks;
     }
 
     public boolean gameOver() {
@@ -199,6 +234,35 @@ public final class LiveGameState {
 
         public List<String> targets() {
             return targets;
+        }
+    }
+
+    /** Exact attacker/defender/blocker assignment captured from Forge combat. */
+    public static final class CombatLinkState {
+        private final String attacker;
+        private final String defender;
+        private final List<String> blockers;
+
+        public CombatLinkState(
+                String attacker,
+                String defender,
+                List<String> blockers
+        ) {
+            this.attacker = safe(attacker);
+            this.defender = safe(defender);
+            this.blockers = immutableStrings(blockers);
+        }
+
+        public String attacker() {
+            return attacker;
+        }
+
+        public String defender() {
+            return defender;
+        }
+
+        public List<String> blockers() {
+            return blockers;
         }
     }
 

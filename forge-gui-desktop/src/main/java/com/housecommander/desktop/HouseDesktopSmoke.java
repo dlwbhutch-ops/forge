@@ -302,6 +302,13 @@ public final class HouseDesktopSmoke {
                                 Collections.singletonList("Player B")
                         )
                 ),
+                Collections.singletonList(
+                        new LiveGameState.CombatLinkState(
+                                "Test Commander",
+                                "Player B",
+                                Collections.singletonList("Test Blocker")
+                        )
+                ),
                 false,
                 ""
         );
@@ -323,6 +330,14 @@ public final class HouseDesktopSmoke {
             throw new AssertionError(
                     "Spectator transition diff missed expected events: "
                             + transitions.size()
+            );
+        }
+        if (after.combatLinks().size() != 1
+                || !"Test Blocker".equals(
+                        after.combatLinks().get(0).blockers().get(0)
+                )) {
+            throw new AssertionError(
+                    "Exact attacker/blocker assignment was not preserved"
             );
         }
 

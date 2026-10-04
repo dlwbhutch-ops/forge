@@ -130,7 +130,11 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             new HashMap<String, String>();
     private List<LiveGameState.StackState> currentStackStates =
             Collections.emptyList();
+    private List<LiveGameState.CombatLinkState> currentCombatLinks =
+            Collections.emptyList();
     private final List<FlightVisual> flightVisuals = new ArrayList<FlightVisual>();
+    private final List<FloatingVisual> floatingVisuals =
+            new ArrayList<FloatingVisual>();
     private Timer flightTimer;
     private LiveGameState transitionCursor = LiveGameState.idle();
 
@@ -999,6 +1003,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
         updateSpectatorTransitions(live);
         currentStackStates = live.stackStates();
+        currentCombatLinks = live.combatLinks();
         currentStackTargets.clear();
         currentStackSources.clear();
         currentTargetSources.clear();
@@ -1353,7 +1358,9 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             super.paint(graphics, component);
             if (!(component instanceof JLayer<?>)
                     || ((currentStackStates == null || currentStackStates.isEmpty())
-                    && flightVisuals.isEmpty())) {
+                    && (currentCombatLinks == null || currentCombatLinks.isEmpty())
+                    && flightVisuals.isEmpty()
+                    && floatingVisuals.isEmpty())) {
                 return;
             }
 
@@ -1422,9 +1429,87 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                         }
                     }
                 }
+                drawCombatLinks(g2, (Container) view, component);
                 drawFlights(g2, (Container) view, component);
+                drawFloatingVisuals(g2, (Container) view, component);
             } finally {
                 g2.dispose();
+            }
+        }
+
+        private void drawCombatLinks(
+                Graphics2D graphics,
+                Container view,
+                javax.swing.JComponent layer
+        ) {
+            if (currentCombatLinks == null || currentCombatLinks.isEmpty()) {
+                return;
+            }
+            java.awt.Stroke priorStroke = graphics.getStroke();
+            graphics.setStroke(
+                    new BasicStroke(
+                            2.4f,
+                            BasicStroke.CAP_ROUND,
+                            BasicStroke.JOIN_ROUND,
+                            10f,
+                            new float[]{8f, 6f},
+                            0f
+                    )
+            );
+            try {
+                for (LiveGameState.CombatLinkState combatLink : currentCombatLinks) {
+                    Component attacker = findTaggedComponent(
+                            view,
+                            "house.cardName",
+                            combatLink.attacker()
+                    );
+                    if (attacker == null) {
+                        continue;
+                    }
+                    Point from = SwingUtilities.convertPoint(
+                            attacker,
+                            attacker.getWidth() / 2,
+                            attacker.getHeight() / 2,
+                            layer
+                    );
+
+                    if (!combatLink.blockers().isEmpty()) {
+                        for (String blockerName : combatLink.blockers()) {
+                            Component blocker = findTaggedComponent(
+                                    view,
+                                    "house.cardName",
+                                    blockerName
+                            );
+                            if (blocker == null || blocker == attacker) {
+                                continue;
+                            }
+                            Point to = SwingUtilities.convertPoint(
+                                    blocker,
+                                    blocker.getWidth() / 2,
+                                    blocker.getHeight() / 2,
+                                    layer
+                            );
+                            drawArrow(graphics, from.x, from.y, to.x, to.y);
+                        }
+                    } else if (!combatLink.defender().isEmpty()) {
+                        Component defender = findTaggedComponent(
+                                view,
+                                "house.playerName",
+                                combatLink.defender()
+                        );
+                        if (defender != null && defender != attacker) {
+                            Point to = SwingUtilities.convertPoint(
+                                    defender,
+                                    defender.getWidth() / 2,
+                                    18,
+                                    layer
+                            );
+                            drawArrow(graphics, from.x, from.y, to.x, to.y);
+                        }
+                    }
+                }
+            } finally {
+                graphics.setStroke(priorStroke);
             }
         }
 
@@ -1467,6 +1552,42 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                         flight.card + " → " + flight.zone,
                         x + 32,
                         y + 4
+                );
+            }
+        }
+
+        private void drawFloatingVisuals(
+                Graphics2D graphics,
+                Container view,
+                javax.swing.JComponent layer
+        ) {
+            long now = System.currentTimeMillis();
+            for (FloatingVisual visual : floatingVisuals) {
+                long age = now - visual.startedAt;
+                if (age < 0L || age > 1050L) {
+                    continue;
+                }
+                Component player = findTaggedComponent(
+                        view,
+                        "house.playerName",
+                        visual.player
+                );
+                if (player == null) {
+                    continue;
+                }
+                Point anchor = SwingUtilities.convertPoint(
+                        player,
+                        player.getWidth() / 2,
+                        30,
+                        layer
+                );
+                double progress = Math.min(1.0, age / 900.0);
+                int y = anchor.y - (int) (40.0 * progress);
+                graphics.setFont(graphics.getFont().deriveFont(Font.BOLD, 14f));
+                graphics.drawString(
+                        visual.text,
+                        anchor.x - Math.max(10, visual.text.length() * 3),
+                        y
                 );
             }
         }
@@ -1548,6 +1669,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             transitionCursor = visible;
             recentActionFeed.clear();
             flightVisuals.clear();
+            floatingVisuals.clear();
             watchEvents.setText("No visual transitions yet.");
             return;
         }
@@ -1569,6 +1691,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                     SpectatorTransition.diff(transitionCursor, frame);
             for (SpectatorTransition.Transition transition : transitions) {
                 queueZoneFlight(transition);
+                queueFloatingVisual(transition);
                 String line = "T" + frame.turn()
                         + " " + frame.phase()
                         + " • " + transition.displayText();
@@ -1616,6 +1739,39 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         startFlightTimer();
     }
 
+    private void queueFloatingVisual(SpectatorTransition.Transition transition) {
+        if (transition == null
+                || transition.player().isEmpty()
+                || watchBoardLayer == null) {
+            return;
+        }
+
+        String label = "";
+        if (transition.kind() == SpectatorTransition.Kind.LIFE) {
+            label = "♥ " + transition.detail();
+        } else if (transition.kind() == SpectatorTransition.Kind.POISON) {
+            label = "☠ " + transition.detail();
+        } else if (transition.kind()
+                == SpectatorTransition.Kind.COMMANDER_DAMAGE) {
+            label = transition.subject() + " CMD " + transition.detail();
+        }
+        if (label.isEmpty()) {
+            return;
+        }
+
+        floatingVisuals.add(
+                new FloatingVisual(
+                        transition.player(),
+                        label,
+                        System.currentTimeMillis()
+                )
+        );
+        while (floatingVisuals.size() > 24) {
+            floatingVisuals.remove(0);
+        }
+        startFlightTimer();
+    }
+
     private static String transitionZone(SpectatorTransition.Kind kind) {
         if (kind == SpectatorTransition.Kind.GRAVEYARD_ADD) {
             return "graveyard";
@@ -1636,14 +1792,27 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         flightTimer = new Timer(33, event -> {
             long now = System.currentTimeMillis();
             flightVisuals.removeIf(flight -> now - flight.startedAt > 850L);
+            floatingVisuals.removeIf(visual -> now - visual.startedAt > 1050L);
             if (watchBoardLayer != null) {
                 watchBoardLayer.repaint();
             }
-            if (flightVisuals.isEmpty()) {
+            if (flightVisuals.isEmpty() && floatingVisuals.isEmpty()) {
                 ((Timer) event.getSource()).stop();
             }
         });
         flightTimer.start();
+    }
+
+    private static final class FloatingVisual {
+        private final String player;
+        private final String text;
+        private final long startedAt;
+
+        private FloatingVisual(String player, String text, long startedAt) {
+            this.player = player == null ? "" : player;
+            this.text = text == null ? "" : text;
+            this.startedAt = startedAt;
+        }
     }
 
     private static final class FlightVisual {

@@ -884,6 +884,34 @@ public final class ForgeBridge {
             blockers.addAll(combat.getAllBlockers());
         }
 
+        List<LiveGameState.CombatLinkState> combatLinks =
+                new ArrayList<LiveGameState.CombatLinkState>();
+        if (combat != null) {
+            for (Card attacker : combat.getAttackers()) {
+                List<String> blockerNames = new ArrayList<String>();
+                for (Card blocker : combat.getBlockers(attacker)) {
+                    blockerNames.add(safeText(blocker.getName()));
+                }
+                String defenderName = "";
+                try {
+                    if (combat.getDefenderByAttacker(attacker) != null) {
+                        defenderName = safeText(
+                                combat.getDefenderByAttacker(attacker).getName()
+                        );
+                    }
+                } catch (Throwable ignored) {
+                    // Combat can change while this immutable snapshot is built.
+                }
+                combatLinks.add(
+                        new LiveGameState.CombatLinkState(
+                                safeText(attacker.getName()),
+                                defenderName,
+                                blockerNames
+                        )
+                );
+            }
+        }
+
         List<LiveGameState.PlayerState> playerStates =
                 new ArrayList<LiveGameState.PlayerState>();
         for (Player player : game.getRegisteredPlayers()) {
@@ -1000,6 +1028,7 @@ public final class ForgeBridge {
                 playerStates,
                 stack,
                 stackStates,
+                combatLinks,
                 game.isGameOver(),
                 winner
         );
