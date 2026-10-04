@@ -19,9 +19,12 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.PilotDecision;
+import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
 import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
@@ -34,6 +37,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class MainActivity extends Activity {
@@ -64,6 +68,8 @@ public final class MainActivity extends Activity {
     private TextView watchStack;
     private TextView watchDetails;
     private DeckLibraryController libraryController;
+    private long shownPilotDecisionId = -1L;
+    private boolean pilotDialogOpen;
 
     private boolean preflightPass;
     private boolean engineAvailable;
@@ -76,6 +82,7 @@ public final class MainActivity extends Activity {
             refreshEngineStatus();
             updateRunState();
             refreshWatchView();
+            refreshPilotDecision();
             handler.postDelayed(this, 1000L);
         }
     };
@@ -146,7 +153,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.14 • Graphical Spectator Board • Unified HOUSE Lab\n"
+                "Bridge 0.15 • Play vs AI • Unified HOUSE Lab\n"
                         + installedVersion,
                 14,
                 false
@@ -326,13 +333,20 @@ public final class MainActivity extends Activity {
 
         root.addView(section("PLAY VS AI"));
 
-        playButton = button("Pilot a deck vs AI");
-        playButton.setEnabled(false);
+        playButton = button("Start pilot game vs 3 AI");
+        playButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                choosePilotDeck();
+            }
+        });
         root.addView(playButton);
 
         TextView playNote = text(
-                "Human-seat decision controls are the next engine bridge milestone. "
-                        + "They will unlock here inside this same HOUSE app.",
+                "0.15 Assisted Pilot: choose the legal card/ability to cast, play, "
+                        + "or activate—or pass priority. HOUSE also asks your yes/no "
+                        + "decisions. Forge handles detailed mana and target plumbing "
+                        + "while the live battlefield updates above.",
                 13,
                 false
         );
@@ -437,7 +451,9 @@ public final class MainActivity extends Activity {
 
     private void updateButtons(RunState state) {
         boolean running = state != null
-                && ("RUNNING".equals(state.status) || "TESTING".equals(state.status));
+                && ("RUNNING".equals(state.status)
+                || "TESTING".equals(state.status)
+                || "PILOTING".equals(state.status));
         boolean enabled = preflightPass && engineAvailable && !running;
 
         testButton.setEnabled(enabled);
@@ -450,7 +466,7 @@ public final class MainActivity extends Activity {
         rosterButton.setEnabled(!running);
         defaultRosterButton.setEnabled(!running);
         watchButton.setEnabled(enabled);
-        playButton.setEnabled(false);
+        playButton.setEnabled(enabled);
 
         long games500 = (long) podCount * 500L;
 
@@ -467,6 +483,103 @@ public final class MainActivity extends Activity {
                     "Run / resume 500 gauntlets (" + games500 + " games)"
             );
         }
+    }
+
+    private void choosePilotDeck() {
+        try {
+            final HousePackage pack = HouseRuntime.loadActivePackage(this);
+            final List<DeckSpec> decks = new ArrayList<DeckSpec>(pack.decks());
+            if (decks.isEmpty()) {
+                throw new IllegalStateException("Active HOUSE roster is empty");
+            }
+
+            String[] labels = new String[decks.size()];
+            for (int i = 0; i < decks.size(); i++) {
+                DeckSpec deck = decks.get(i);
+                labels[i] = deck.deck()
+                        + (deck.commanders() == null
+                        || deck.commanders().trim().isEmpty()
+                        ? ""
+                        : "\n" + deck.commanders());
+            }
+
+            new AlertDialog.Builder(this)
+                    .setTitle("Choose your Commander deck")
+                    .setItems(labels, new android.content.DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(
+                                android.content.DialogInterface dialog,
+                                int which
+                        ) {
+                            if (which >= 0 && which < decks.size()) {
+                                startPilot(decks.get(which).deck());
+                            }
+                        }
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        } catch (Throwable t) {
+            runStatus.setText("PILOT BLOCKED • " + safeMessage(t));
+        }
+    }
+
+    private void startPilot(String deckName) {
+        shownPilotDecisionId = -1L;
+        Intent intent = new Intent(this, TournamentService.class)
+                .setAction(TournamentService.ACTION_PILOT)
+                .putExtra(TournamentService.EXTRA_PILOT_DECK, deckName);
+        startServiceCompat(intent, true);
+    }
+
+    private void refreshPilotDecision() {
+        if (pilotDialogOpen) {
+            return;
+        }
+
+        final PilotDecision decision = PilotDecisionBridge.current();
+        if (!decision.pending()
+                || decision.id() == shownPilotDecisionId
+                || isFinishing()) {
+            return;
+        }
+
+        pilotDialogOpen = true;
+        shownPilotDecisionId = decision.id();
+
+        final String[] options = decision.options().toArray(new String[0]);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("HOUSE Pilot • " + decision.player())
+                .setMessage(decision.prompt())
+                .setItems(
+                        options,
+                        new android.content.DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(
+                                    android.content.DialogInterface d,
+                                    int which
+                            ) {
+                                PilotDecisionBridge.submit(
+                                        decision.id(),
+                                        which
+                                );
+                                pilotDialogOpen = false;
+                            }
+                        }
+                )
+                .create();
+
+        dialog.setCancelable(false);
+        dialog.setOnDismissListener(
+                new android.content.DialogInterface.OnDismissListener() {
+                    @Override
+                    public void onDismiss(
+                            android.content.DialogInterface d
+                    ) {
+                        pilotDialogOpen = false;
+                    }
+                }
+        );
+        dialog.show();
     }
 
     private void startTest() {
