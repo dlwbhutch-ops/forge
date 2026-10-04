@@ -57,6 +57,7 @@ public final class SpectatorPlayback {
             FRAMES.clear();
             visible = initial == null ? LiveGameState.idle() : initial;
             FRAMES.add(visible);
+            FriendlyGameLog.reset(visible);
             speed = Speed.MAX;
         }
     }
@@ -73,6 +74,7 @@ public final class SpectatorPlayback {
             }
 
             FRAMES.add(state);
+            FriendlyGameLog.record(state);
             while (FRAMES.size() > MAX_FRAMES) {
                 FRAMES.remove(0);
             }
