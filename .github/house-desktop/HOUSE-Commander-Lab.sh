@@ -1,0 +1,38 @@
+#!/bin/bash
+set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR"
+
+if [ -x "$DIR/runtime/bin/java" ]; then
+  JAVA="$DIR/runtime/bin/java"
+elif command -v java >/dev/null 2>&1; then
+  JAVA="$(command -v java)"
+else
+  echo "HOUSE Commander Lab could not find its bundled Java runtime."
+  echo "Re-extract the complete HOUSE package and try again."
+  exit 1
+fi
+
+exec "$JAVA" -Xmx4096m -Dfile.encoding=UTF-8 \
+  --add-opens=java.desktop/java.beans=ALL-UNNAMED \
+  --add-opens=java.desktop/javax.swing.border=ALL-UNNAMED \
+  --add-opens=java.desktop/javax.swing.event=ALL-UNNAMED \
+  --add-opens=java.desktop/sun.swing=ALL-UNNAMED \
+  --add-opens=java.desktop/java.awt.image=ALL-UNNAMED \
+  --add-opens=java.desktop/java.awt.color=ALL-UNNAMED \
+  --add-opens=java.desktop/sun.awt.image=ALL-UNNAMED \
+  --add-opens=java.desktop/javax.swing=ALL-UNNAMED \
+  --add-opens=java.desktop/java.awt=ALL-UNNAMED \
+  --add-opens=java.base/java.util=ALL-UNNAMED \
+  --add-opens=java.base/java.lang=ALL-UNNAMED \
+  --add-opens=java.base/java.lang.reflect=ALL-UNNAMED \
+  --add-opens=java.base/java.text=ALL-UNNAMED \
+  --add-opens=java.desktop/java.awt.font=ALL-UNNAMED \
+  --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED \
+  --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+  --add-opens=java.base/java.nio=ALL-UNNAMED \
+  --add-opens=java.base/java.math=ALL-UNNAMED \
+  --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+  --add-opens=java.base/java.net=ALL-UNNAMED \
+  -cp "$DIR/HOUSE-Commander-Lab.jar" \
+  com.housecommander.desktop.HouseDesktopMain
