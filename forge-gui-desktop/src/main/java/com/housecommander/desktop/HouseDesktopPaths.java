@@ -36,6 +36,12 @@ public final class HouseDesktopPaths {
         return dir;
     }
 
+    public static File cardArtDir() throws IOException {
+        File dir = new File(home(), "card-art");
+        ensureDirectory(dir);
+        return dir;
+    }
+
     public static File stateFile() throws IOException {
         return new File(home(), "tournament_state.properties");
     }
