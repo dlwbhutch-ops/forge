@@ -1132,14 +1132,10 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         if (card == null) {
             return "";
         }
-        if (!card.imageKey().isEmpty()
-                && HouseCardImageService.localFile(card.imageKey()) != null) {
+        if (!card.imageKey().isEmpty()) {
             return card.imageKey();
         }
-        if (!card.imageFetchKey().isEmpty()) {
-            return card.imageFetchKey();
-        }
-        return card.imageKey();
+        return card.imageFetchKey();
     }
 
     private ImageIcon cardThumbnail(LiveGameState.CardState card) {
