@@ -5,6 +5,7 @@ on:
     branches:
       - house-commander-lab-v05
       - 'house-unified-release-v017-*'
+      - 'house-cross-platform-verify-v018-*'
   workflow_dispatch:
 
 jobs:
@@ -300,3 +301,87 @@ jobs:
             house-runtime-smoke.log
             house-literal-smoke.log
           if-no-files-found: warn
+
+  verify-desktop-packages:
+    name: Verify ${{ matrix.label }}
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            os: windows-latest
+            artifact: HOUSE-Commander-Lab-0.17-Windows-x64
+            archive: HOUSE-Commander-Lab-0.17-Windows-x64.zip
+            expected_arch: x64
+          - label: macOS Intel
+            os: macos-15-intel
+            artifact: HOUSE-Commander-Lab-0.17-macOS-Intel
+            archive: HOUSE-Commander-Lab-0.17-macOS-Intel.zip
+            expected_arch: x64
+          - label: macOS Apple Silicon
+            os: macos-15
+            artifact: HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon
+            archive: HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon.zip
+            expected_arch: arm64
+          - label: Linux x64
+            os: ubuntu-latest
+            artifact: HOUSE-Commander-Lab-0.17-Linux-x64
+            archive: HOUSE-Commander-Lab-0.17-Linux-x64.zip
+            expected_arch: x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout HOUSE source
+        uses: actions/checkout@v4
+
+      - name: Download packaged app
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: package
+
+      - name: Extract packaged app on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath "package/${{ matrix.archive }}" -DestinationPath extracted
+          Get-ChildItem extracted
+
+      - name: Extract packaged app on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          unzip -q "package/${{ matrix.archive }}" -d extracted
+          find extracted -maxdepth 2 -type f -print | head -n 30
+
+      - name: Verify bundled runtime and literal HOUSE startup
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test -n "$ROOT"
+          python3 .github/scripts/verify-house-desktop-package.py "$ROOT" --expected-arch "${{ matrix.expected_arch }}"
+
+      - name: Verify bundled runtime and literal HOUSE startup on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = Get-ChildItem extracted -Directory | Select-Object -First 1
+          if ($null -eq $root) { throw "Extracted HOUSE package directory was not found" }
+          python .github/scripts/verify-house-desktop-package.py "$($root.FullName)" --expected-arch "${{ matrix.expected_arch }}"
+
+  release-ready:
+    name: Unified release ready
+    needs:
+      - release
+      - verify-desktop-packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm all platform packages passed
+        run: |
+          echo "HOUSE Commander Lab 0.17 unified distribution passed native package verification."
