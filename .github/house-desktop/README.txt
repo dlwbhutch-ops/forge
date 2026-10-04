@@ -1,6 +1,6 @@
-HOUSE Commander Lab 0.16 Real Card Battlefield
+HOUSE Commander Lab 0.17 Unified Distribution
 
-Requires Java 17 or newer.
+Self-contained 0.17 desktop packages include Java 17; no separate Java install is required.
 
 macOS:
 1. Unzip the package.
@@ -61,3 +61,9 @@ the selected roster instead of reserving a fixed number of HOUSE seats.
 on demand and cached locally; gameplay remains fully functional offline when art
 is unavailable. Cards support click/tap zoom, tapped rotation, pile badges, and
 new/changed battlefield-entry animation while preserving token-safe grouping.
+
+
+0.17 consolidates the current HOUSE feature set into one release family. Self-contained
+desktop packages are produced for Windows x64, macOS Intel, macOS Apple Silicon,
+and Linux x64, alongside the Android APK. Every package is tied to one Git commit
+with a release manifest and SHA-256 checksums.
