@@ -244,13 +244,49 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HOUSE-Commander-Lab-0.17-All-Platforms
+          path: house-release/dist/HOUSE-Commander-Lab-0.17-All-Platforms.zip
+          if-no-files-found: error
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-Windows-x64
+          path: house-release/dist/HOUSE-Commander-Lab-0.17-Windows-x64.zip
+          if-no-files-found: error
+
+      - name: Upload macOS Intel package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-macOS-Intel
+          path: house-release/dist/HOUSE-Commander-Lab-0.17-macOS-Intel.zip
+          if-no-files-found: error
+
+      - name: Upload macOS Apple Silicon package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon
+          path: house-release/dist/HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon.zip
+          if-no-files-found: error
+
+      - name: Upload Linux package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-Linux-x64
+          path: house-release/dist/HOUSE-Commander-Lab-0.17-Linux-x64.zip
+          if-no-files-found: error
+
+      - name: Upload Android package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-Android
+          path: house-release/dist/HOUSE-Commander-Lab-0.17-Android.apk
+          if-no-files-found: error
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOUSE-Commander-Lab-0.17-Release-Metadata
           path: |
-            house-release/dist/HOUSE-Commander-Lab-0.17-All-Platforms.zip
-            house-release/dist/HOUSE-Commander-Lab-0.17-Windows-x64.zip
-            house-release/dist/HOUSE-Commander-Lab-0.17-macOS-Intel.zip
-            house-release/dist/HOUSE-Commander-Lab-0.17-macOS-Apple-Silicon.zip
-            house-release/dist/HOUSE-Commander-Lab-0.17-Linux-x64.zip
-            house-release/dist/HOUSE-Commander-Lab-0.17-Android.apk
             house-release/dist/RELEASE-MANIFEST.txt
             house-release/dist/SHA256SUMS.txt
           if-no-files-found: error
