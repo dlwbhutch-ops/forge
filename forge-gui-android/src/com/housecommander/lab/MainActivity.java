@@ -933,14 +933,10 @@ public final class MainActivity extends Activity {
         if (card == null) {
             return "";
         }
-        if (!card.imageKey().isEmpty()
-                && HouseCardImageService.localFile(card.imageKey()) != null) {
+        if (!card.imageKey().isEmpty()) {
             return card.imageKey();
         }
-        if (!card.imageFetchKey().isEmpty()) {
-            return card.imageFetchKey();
-        }
-        return card.imageKey();
+        return card.imageFetchKey();
     }
 
     private Bitmap cardBitmap(final LiveGameState.CardState card) {
