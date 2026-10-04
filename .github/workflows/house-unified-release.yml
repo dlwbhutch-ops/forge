@@ -104,7 +104,7 @@ jobs:
             -Dandroid.buildToolsVersion=35.0.0 \
             -Dandroid.renameManifestPackage=com.housecommander.labapp \
             -Dhouse.buildNumber=${GITHUB_RUN_NUMBER} \
-            -Dhouse.androidVersionCode=$((200008000 + GITHUB_RUN_NUMBER)) \
+            -Dhouse.androidVersionCode=$((200017000 + GITHUB_RUN_NUMBER)) \
             -Dmaven.test.skip=true
 
       - name: Sign Android APK
