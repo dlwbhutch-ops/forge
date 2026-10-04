@@ -49,9 +49,11 @@ import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public final class HouseDesktopMain extends JFrame implements DesktopTournamentRunner.Listener {
@@ -109,6 +111,11 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JTextArea watchLog = new JTextArea();
     private final List<String> recentActionFeed = new ArrayList<String>();
     private final Set<String> currentStackTargets = new HashSet<String>();
+    private final Set<String> currentStackSources = new HashSet<String>();
+    private final Map<String, String> currentTargetSources =
+            new HashMap<String, String>();
+    private final Map<String, String> currentSourceTargets =
+            new HashMap<String, String>();
     private LiveGameState transitionCursor = LiveGameState.idle();
 
     private final Timer refreshTimer;
@@ -975,8 +982,21 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
         updateSpectatorTransitions(live);
         currentStackTargets.clear();
+        currentStackSources.clear();
+        currentTargetSources.clear();
+        currentSourceTargets.clear();
         for (LiveGameState.StackState stackItem : live.stackStates()) {
-            currentStackTargets.addAll(stackItem.targets());
+            String source = stackItem.source().isEmpty()
+                    ? stackItem.description()
+                    : stackItem.source();
+            if (!source.isEmpty()) {
+                currentStackSources.add(source);
+            }
+            for (String target : stackItem.targets()) {
+                currentStackTargets.add(target);
+                mergeLink(currentTargetSources, target, source);
+                mergeLink(currentSourceTargets, source, target);
+            }
         }
 
         if (live.sequence() <= 1L) {
@@ -1226,9 +1246,23 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
         String details = cardDetail(card);
         boolean targeted = currentStackTargets.contains(card.name());
+        boolean stackSource = currentStackSources.contains(card.name());
+        if (stackSource) {
+            String targets = currentSourceTargets.get(card.name());
+            details = details
+                    + " • STACK"
+                    + (targets == null || targets.isEmpty() ? "" : " → " + targets);
+        }
         if (targeted) {
-            details = details + " • TARGET";
+            String sources = currentTargetSources.get(card.name());
+            details = details
+                    + " • TARGET"
+                    + (sources == null || sources.isEmpty() ? "" : " ← " + sources);
+        }
+        if (targeted) {
             tile.setBorder(BorderFactory.createLineBorder(tile.getForeground(), 3));
+        } else if (stackSource) {
+            tile.setBorder(BorderFactory.createLineBorder(tile.getForeground(), 2));
         }
         JLabel state = new JLabel(
                 "<html><center>" + escapeHtml(details) + "</center></html>",
@@ -1248,9 +1282,29 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 + "|"
                 + group.count();
         if (seenVisualPiles.add(visualKey)) {
-            pulseTile(tile, targeted);
+            pulseTile(tile, targeted || stackSource);
         }
         return tile;
+    }
+
+    private static void mergeLink(
+            Map<String, String> links,
+            String key,
+            String value
+    ) {
+        if (links == null
+                || key == null
+                || key.isEmpty()
+                || value == null
+                || value.isEmpty()) {
+            return;
+        }
+        String prior = links.get(key);
+        if (prior == null || prior.isEmpty()) {
+            links.put(key, value);
+        } else if (!prior.contains(value)) {
+            links.put(key, prior + ", " + value);
+        }
     }
 
     private void updateSpectatorTransitions(LiveGameState visible) {

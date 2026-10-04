@@ -41,8 +41,10 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class MainActivity extends Activity {
@@ -75,6 +77,11 @@ public final class MainActivity extends Activity {
     private TextView watchDetails;
     private final List<String> recentActionFeed = new ArrayList<String>();
     private final Set<String> currentStackTargets = new HashSet<String>();
+    private final Set<String> currentStackSources = new HashSet<String>();
+    private final Map<String, String> currentTargetSources =
+            new HashMap<String, String>();
+    private final Map<String, String> currentSourceTargets =
+            new HashMap<String, String>();
     private LiveGameState transitionCursor = LiveGameState.idle();
     private DeckLibraryController libraryController;
     private AndroidCardArtCache cardArtCache;
@@ -758,8 +765,21 @@ public final class MainActivity extends Activity {
 
         updateSpectatorTransitions(live);
         currentStackTargets.clear();
+        currentStackSources.clear();
+        currentTargetSources.clear();
+        currentSourceTargets.clear();
         for (LiveGameState.StackState stackItem : live.stackStates()) {
-            currentStackTargets.addAll(stackItem.targets());
+            String source = stackItem.source().isEmpty()
+                    ? stackItem.description()
+                    : stackItem.source();
+            if (!source.isEmpty()) {
+                currentStackSources.add(source);
+            }
+            for (String target : stackItem.targets()) {
+                currentStackTargets.add(target);
+                mergeLink(currentTargetSources, target, source);
+                mergeLink(currentSourceTargets, source, target);
+            }
         }
 
         if (live.sequence() <= 1L) {
@@ -1036,8 +1056,18 @@ public final class MainActivity extends Activity {
 
         String details = cardDetail(card);
         boolean targeted = currentStackTargets.contains(card.name());
+        boolean stackSource = currentStackSources.contains(card.name());
+        if (stackSource) {
+            String targets = currentSourceTargets.get(card.name());
+            details = details
+                    + " • STACK"
+                    + (targets == null || targets.isEmpty() ? "" : " → " + targets);
+        }
         if (targeted) {
-            details = details + " • TARGET";
+            String sources = currentTargetSources.get(card.name());
+            details = details
+                    + " • TARGET"
+                    + (sources == null || sources.isEmpty() ? "" : " ← " + sources);
             tile.setScaleX(1.04f);
             tile.setScaleY(1.04f);
         }
@@ -1060,14 +1090,41 @@ public final class MainActivity extends Activity {
                 + group.count();
         if (seenVisualPiles.add(visualKey)) {
             tile.setAlpha(0f);
-            tile.setTranslationY(dp(12));
+            if (card.attacking()) {
+                tile.setTranslationY(-dp(18));
+            } else if (card.blocking()) {
+                tile.setTranslationX(dp(18));
+            } else {
+                tile.setTranslationY(dp(12));
+            }
             tile.animate()
                     .alpha(1f)
+                    .translationX(0f)
                     .translationY(0f)
-                    .setDuration(180L)
+                    .setDuration(card.attacking() || card.blocking() ? 240L : 180L)
                     .start();
         }
         return tile;
+    }
+
+    private static void mergeLink(
+            Map<String, String> links,
+            String key,
+            String value
+    ) {
+        if (links == null
+                || key == null
+                || key.isEmpty()
+                || value == null
+                || value.isEmpty()) {
+            return;
+        }
+        String prior = links.get(key);
+        if (prior == null || prior.isEmpty()) {
+            links.put(key, value);
+        } else if (!prior.contains(value)) {
+            links.put(key, prior + ", " + value);
+        }
     }
 
     private void updateSpectatorTransitions(LiveGameState visible) {
