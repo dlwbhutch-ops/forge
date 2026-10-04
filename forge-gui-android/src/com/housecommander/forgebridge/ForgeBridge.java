@@ -891,6 +891,7 @@ public final class ForgeBridge {
                 battlefield.add(new LiveGameState.CardState(
                         displayName,
                         spectatorImageKey(card),
+                        spectatorFetchKey(card),
                         card.isTapped(),
                         card.isToken(),
                         card.isFaceDown(),
@@ -972,6 +973,20 @@ public final class ForgeBridge {
             );
         }
         return out;
+    }
+
+    private static String spectatorFetchKey(Card card) {
+        if (card == null || card.isFaceDown()) {
+            return "";
+        }
+        try {
+            if (card.getPaperCard() != null) {
+                return safeText(card.getPaperCard().getImageKey(false));
+            }
+        } catch (Throwable ignored) {
+            // Missing print metadata should only disable automatic art fetching.
+        }
+        return "";
     }
 
     private static String spectatorImageKey(Card card) {
