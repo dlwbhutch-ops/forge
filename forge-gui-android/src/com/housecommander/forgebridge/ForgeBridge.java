@@ -890,6 +890,7 @@ public final class ForgeBridge {
                 boolean creature = card.isCreature();
                 battlefield.add(new LiveGameState.CardState(
                         displayName,
+                        spectatorImageKey(card),
                         card.isTapped(),
                         card.isToken(),
                         card.isFaceDown(),
@@ -971,6 +972,23 @@ public final class ForgeBridge {
             );
         }
         return out;
+    }
+
+    private static String spectatorImageKey(Card card) {
+        if (card == null || card.isFaceDown()) {
+            return "";
+        }
+        try {
+            if (card.getPaperCard() != null) {
+                String key = card.getPaperCard().getCardImageKey();
+                if (key != null && !key.isEmpty()) {
+                    return key;
+                }
+            }
+            return safeText(card.getImageKey());
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     private static List<String> counterLabels(Card card) {
