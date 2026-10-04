@@ -71,3 +71,11 @@ iOS
 The repository retains an iOS compatibility audit, but 0.17 does not claim a
 native installable iOS client. The supported installable targets in this release
 are Windows, macOS, Linux, and Android.
+
+
+NATIVE RELEASE VERIFICATION
+The unified release pipeline does not stop after assembling archives. It unpacks
+the exact shipped Windows x64, macOS Intel, macOS Apple Silicon, and Linux x64
+packages on native GitHub-hosted runners, launches each bundled Java runtime, and
+runs HOUSE's literal desktop smoke gate against the packaged JAR. Android is
+built, signed, and checked with the existing literal four-player Forge smoke gate.
