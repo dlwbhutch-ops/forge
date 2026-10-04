@@ -222,7 +222,50 @@ public final class ForgeBridge {
             int hardTimeoutSeconds,
             int stallTimeoutSeconds
     ) throws Exception {
+        return runCommanderGameInternal(
+                deckPaths,
+                logPath,
+                hardTimeoutSeconds,
+                stallTimeoutSeconds,
+                -1
+        );
+    }
+
+    /**
+     * Runs one literal Commander game with exactly one HOUSE-assisted human seat.
+     */
+    public static String runCommanderGameWithPilot(
+            String[] deckPaths,
+            int pilotSeat,
+            String logPath,
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds
+    ) throws Exception {
+        return runCommanderGameInternal(
+                deckPaths,
+                logPath,
+                hardTimeoutSeconds,
+                stallTimeoutSeconds,
+                pilotSeat
+        );
+    }
+
+    private static String runCommanderGameInternal(
+            String[] deckPaths,
+            String logPath,
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds,
+            int pilotSeat
+    ) throws Exception {
         validateRunArguments(deckPaths, hardTimeoutSeconds, stallTimeoutSeconds);
+        if (pilotSeat >= deckPaths.length) {
+            throw new IllegalArgumentException(
+                    "Pilot seat " + pilotSeat + " is outside the Commander pod"
+            );
+        }
+        if (pilotSeat >= 0) {
+            PilotDecisionBridge.reset();
+        }
 
         if (!isAvailable()) {
             throw new IllegalStateException(
@@ -230,7 +273,7 @@ public final class ForgeBridge {
             );
         }
 
-        final List<RegisteredPlayer> players = loadPlayers(deckPaths);
+        final List<RegisteredPlayer> players = loadPlayers(deckPaths, pilotSeat);
 
         final GameRules rules = new GameRules(GameType.Commander);
         rules.setAppliedVariants(EnumSet.of(GameType.Commander));
@@ -335,6 +378,16 @@ public final class ForgeBridge {
                 }
 
                 nowNs = System.nanoTime();
+
+                /*
+                 * A human thinking at priority is not a Forge stall. Keep the
+                 * hard game ceiling, but suspend the no-progress watchdog
+                 * while an explicit HOUSE pilot decision is pending.
+                 */
+                if (pilotSeat >= 0 && PilotDecisionBridge.hasPending()) {
+                    continue;
+                }
+
                 long stalledNs = nowNs - heartbeat.lastActivityNs();
                 if (stalledNs >= stallTimeoutNs) {
                     elapsedMs = elapsedMillis(startedNs);
@@ -442,6 +495,9 @@ public final class ForgeBridge {
                 heartbeat
         );
         liveRecorder.publish("GAME_COMPLETE", true);
+        if (pilotSeat >= 0) {
+            PilotDecisionBridge.reset();
+        }
 
         String winner = game.getOutcome()
                 .getWinningLobbyPlayer()
@@ -478,7 +534,7 @@ public final class ForgeBridge {
         }
     }
 
-    private static List<RegisteredPlayer> loadPlayers(String[] deckPaths) throws IOException {
+    private static List<RegisteredPlayer> loadPlayers(String[] deckPaths, int pilotSeat) throws IOException {
         List<RegisteredPlayer> players = new ArrayList<RegisteredPlayer>(deckPaths.length);
 
         for (int i = 0; i < deckPaths.length; i++) {
@@ -535,13 +591,17 @@ public final class ForgeBridge {
             }
 
             RegisteredPlayer registered = RegisteredPlayer.forCommander(deck);
-            registered.setPlayer(
-                    GamePlayerUtil.createAiPlayer(
-                            playerName,
-                            0,
-                            0
-                    )
-            );
+            if (i == pilotSeat) {
+                registered.setPlayer(new HousePilotLobbyPlayer(playerName));
+            } else {
+                registered.setPlayer(
+                        GamePlayerUtil.createAiPlayer(
+                                playerName,
+                                0,
+                                0
+                        )
+                );
+            }
             players.add(registered);
         }
 
@@ -649,6 +709,7 @@ public final class ForgeBridge {
             Throwable originalFailure,
             String reason
     ) {
+        PilotDecisionBridge.cancel();
         /*
          * First ask the worker to stop using interruption only. This avoids
          * mutating Game state from the watchdog thread unless Forge ignores the
