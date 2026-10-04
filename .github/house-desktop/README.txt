@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.13 Live Battlefield
+HOUSE Commander Lab 0.14 Selectable Watch Pods
 
 Requires Java 17 or newer.
 
@@ -42,3 +42,8 @@ spectator battlefield inside the same HOUSE app. The Watch view shows turn/phase
 active player, life/poison, hand/library counts, public zones, battlefield
 permanents, tap/token/P-T state, and the live stack while retaining the raw Forge
 event log for diagnostics. The UI never reads the mutable Forge game directly.
+
+
+0.14 lets Watch Game choose any four decks from the persistent Deck Library.
+The selected one-off pod runs through the same literal Forge bridge and live
+battlefield snapshot system without changing the 19-deck tournament roster.
