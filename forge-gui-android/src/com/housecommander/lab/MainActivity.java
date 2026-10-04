@@ -231,7 +231,7 @@ public final class MainActivity extends Activity {
         });
         root.addView(rosterButton);
 
-        defaultRosterButton = button("Restore bundled HOUSE 19");
+        defaultRosterButton = button("Restore default HOUSE roster");
         defaultRosterButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
