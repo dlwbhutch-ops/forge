@@ -5,6 +5,7 @@ import com.housecommander.core.DeckSpec;
 import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.PodSpec;
+import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
@@ -35,6 +36,7 @@ public final class HouseDesktopSmoke {
         verifyDeckManagement(pack);
         verifySpectatorGrouping();
         verifyPilotDecisionBridge();
+        verifyExpandedRoster(pack);
 
         DesktopForgeBootstrap.ensureReady(System.out::println);
         if (!ForgeBridge.isAvailable()) {
@@ -93,6 +95,69 @@ public final class HouseDesktopSmoke {
                         + live.players().size()
                         + " event="
                         + live.lastEvent()
+        );
+    }
+
+    private static void verifyExpandedRoster(HousePackage template) {
+        List<DeckSpec> expanded =
+                new ArrayList<DeckSpec>(template.decks());
+        DeckSpec source = template.decks().get(0);
+
+        expanded.add(
+                new DeckSpec(
+                        "HOUSE Expansion 20",
+                        source.source(),
+                        source.commanders(),
+                        source.dck(),
+                        source.status(),
+                        source.detail(),
+                        "HOUSE Expansion Engine 20"
+                )
+        );
+        expanded.add(
+                new DeckSpec(
+                        "HOUSE Expansion 21",
+                        source.source(),
+                        source.commanders(),
+                        source.dck(),
+                        source.status(),
+                        source.detail(),
+                        "HOUSE Expansion Engine 21"
+                )
+        );
+
+        HousePackage generated = RosterBuilder.build(
+                template,
+                expanded
+        );
+        if (generated.decks().size() != 21) {
+            throw new AssertionError(
+                    "Expanded roster did not retain all 21 decks"
+            );
+        }
+        if (!generated.validation().passesStrictGate()) {
+            throw new AssertionError(
+                    generated.validation().summary()
+            );
+        }
+        if (generated.validation().uniquePairs() != 210
+                || generated.validation().meetingsPerPair() < 3) {
+            throw new AssertionError(
+                    "Expanded roster pair coverage failed: "
+                            + generated.validation().summary()
+            );
+        }
+        if (generated.validation().maxGamesPerDeck()
+                - generated.validation().gamesPerDeck() > 1) {
+            throw new AssertionError(
+                    "Expanded roster games are not balanced: "
+                            + generated.validation().summary()
+            );
+        }
+
+        System.out.println(
+                "DESKTOP_EXPANDED_ROSTER_PASS "
+                        + generated.validation().summary()
         );
     }
 
