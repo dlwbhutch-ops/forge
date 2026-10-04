@@ -10,6 +10,7 @@ import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
+import com.housecommander.forgebridge.SpectatorPlayback;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -87,6 +88,15 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JButton resetButton = new JButton("Reset Tournament");
     private final JButton folderButton = new JButton("Open HOUSE Data Folder");
     private final JButton watchButton = new JButton("Run & Watch 1 Literal Game");
+    private final JButton watchPauseButton = new JButton("Pause View");
+    private final JButton watch1xButton = new JButton("1x");
+    private final JButton watch2xButton = new JButton("2x");
+    private final JButton watch4xButton = new JButton("4x");
+    private final JButton watch8xButton = new JButton("8x");
+    private final JButton watchMaxButton = new JButton("Max / Live");
+    private final JButton watchStepActionButton = new JButton("Step Action");
+    private final JButton watchStepPhaseButton = new JButton("Step Phase");
+    private final JButton watchStepTurnButton = new JButton("Step Turn");
     private final JButton playButton = new JButton("Start Pilot Game vs 3 AI");
     private final JLabel playStatus = new JLabel("Pilot mode ready");
     private long shownPilotDecisionId = -1L;
@@ -229,8 +239,20 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
         JPanel controls = new JPanel(new BorderLayout(8, 8));
         watchStatus.setFont(watchStatus.getFont().deriveFont(Font.BOLD));
-        controls.add(watchStatus, BorderLayout.CENTER);
-        controls.add(watchButton, BorderLayout.EAST);
+        controls.add(watchStatus, BorderLayout.NORTH);
+
+        JPanel playback = new JPanel(new GridLayout(2, 5, 4, 4));
+        playback.add(watchButton);
+        playback.add(watchPauseButton);
+        playback.add(watch1xButton);
+        playback.add(watch2xButton);
+        playback.add(watch4xButton);
+        playback.add(watch8xButton);
+        playback.add(watchMaxButton);
+        playback.add(watchStepActionButton);
+        playback.add(watchStepPhaseButton);
+        playback.add(watchStepTurnButton);
+        controls.add(playback, BorderLayout.CENTER);
         panel.add(controls, BorderLayout.NORTH);
 
         watchBoard.setBorder(BorderFactory.createTitledBorder("Literal Forge Battlefield"));
@@ -300,7 +322,46 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         fiveHundredButton.addActionListener(event -> runner.runTournament(500));
         pauseButton.addActionListener(event -> runner.requestPause());
         resetButton.addActionListener(event -> resetTournament());
-        watchButton.addActionListener(event -> runner.runOneLiteralGame());
+        watchButton.addActionListener(event -> {
+            SpectatorPlayback.goLive();
+            runner.runOneLiteralGame();
+        });
+        watchPauseButton.addActionListener(event -> {
+            SpectatorPlayback.pause();
+            refreshWatch();
+        });
+        watch1xButton.addActionListener(event -> {
+            SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X1);
+            refreshWatch();
+        });
+        watch2xButton.addActionListener(event -> {
+            SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X2);
+            refreshWatch();
+        });
+        watch4xButton.addActionListener(event -> {
+            SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X4);
+            refreshWatch();
+        });
+        watch8xButton.addActionListener(event -> {
+            SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X8);
+            refreshWatch();
+        });
+        watchMaxButton.addActionListener(event -> {
+            SpectatorPlayback.goLive();
+            refreshWatch();
+        });
+        watchStepActionButton.addActionListener(event -> {
+            SpectatorPlayback.nextAction();
+            refreshWatch();
+        });
+        watchStepPhaseButton.addActionListener(event -> {
+            SpectatorPlayback.nextPhase();
+            refreshWatch();
+        });
+        watchStepTurnButton.addActionListener(event -> {
+            SpectatorPlayback.nextTurn();
+            refreshWatch();
+        });
         playButton.addActionListener(event -> startPilotGame());
     }
 
@@ -899,7 +960,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
     private void refreshWatch() {
         DesktopStateStore.State run = runner.state();
-        LiveGameState live = ForgeBridge.liveGameState();
+        LiveGameState live = SpectatorPlayback.visibleState();
 
         if (live.sequence() <= 1L) {
             seenVisualPiles.clear();
@@ -914,6 +975,10 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                             ? ""
                             : " • active " + live.activePlayer())
                             + " • " + live.lastEvent()
+                            + " • viewer " + SpectatorPlayback.speed().label()
+                            + (SpectatorPlayback.framesBehind() > 0
+                            ? " • " + SpectatorPlayback.framesBehind() + " frames behind"
+                            : " • live")
                             + winner
             );
         } else if (runner.isActive() && "TESTING".equals(run.status)) {
