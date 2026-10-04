@@ -48,3 +48,6 @@ event log for diagnostics. The UI never reads the mutable Forge game directly.
 against three literal Forge AI seats. HOUSE surfaces legal priority actions and
 yes/no choices while Forge continues to resolve mana sequencing and detailed
 target-selection plumbing. The same 0.14 live battlefield remains visible in Watch.
+
+There is no fixed maximum tournament roster size. Schedule generation scales with
+the selected roster instead of reserving a fixed number of HOUSE seats.
