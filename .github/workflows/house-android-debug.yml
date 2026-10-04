@@ -8,6 +8,7 @@ on:
       - 'house-manabox-import-v011-*'
       - 'house-unified-app-v012-*'
       - 'house-watch-game-v013-*'
+      - 'house-watch-match-v014-*'
   workflow_dispatch:
 
 jobs:
