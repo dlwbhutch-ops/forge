@@ -9,6 +9,7 @@ on:
       - 'house-unified-app-v012-*'
       - 'house-watch-game-v013-*'
       - 'house-spectator-board-v014-*'
+      - 'house-pilot-v015-*'
   workflow_dispatch:
 
 jobs:
