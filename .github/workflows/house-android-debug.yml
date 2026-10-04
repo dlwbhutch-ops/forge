@@ -11,6 +11,7 @@ on:
       - 'house-spectator-board-v014-*'
       - 'house-pilot-v015-*'
       - 'house-visuals-v016-*'
+      - 'house-unified-release-v017-*'
   workflow_dispatch:
 
 jobs:
