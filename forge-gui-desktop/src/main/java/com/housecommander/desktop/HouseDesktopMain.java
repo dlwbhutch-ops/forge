@@ -275,7 +275,60 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         fiveHundredButton.addActionListener(event -> runner.runTournament(500));
         pauseButton.addActionListener(event -> runner.requestPause());
         resetButton.addActionListener(event -> resetTournament());
-        watchButton.addActionListener(event -> runner.runOneLiteralGame());
+        watchButton.addActionListener(event -> selectWatchPod());
+    }
+
+    private void selectWatchPod() {
+        try {
+            HousePackage template = HouseDesktopRuntime.loadTemplatePackage();
+            List<DeckSpec> library = libraryStore.allDecks(template);
+            if (library.size() < 4) {
+                throw new IllegalStateException(
+                        "Deck Library needs at least four decks for a Commander watch pod"
+                );
+            }
+
+            JList<DeckSpec> list = new JList<DeckSpec>(
+                    library.toArray(new DeckSpec[0])
+            );
+            list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+            list.setCellRenderer(new DeckRenderer(libraryStore));
+
+            int count = Math.min(4, library.size());
+            int[] selected = new int[count];
+            for (int i = 0; i < count; i++) {
+                selected[i] = i;
+            }
+            list.setSelectedIndices(selected);
+
+            JScrollPane pane = new JScrollPane(list);
+            pane.setPreferredSize(new Dimension(720, 500));
+            int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    pane,
+                    "Choose exactly four decks to Watch",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.PLAIN_MESSAGE
+            );
+            if (choice != JOptionPane.OK_OPTION) {
+                return;
+            }
+
+            List<DeckSpec> decks = list.getSelectedValuesList();
+            if (decks.size() != 4) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Select exactly four decks. You selected " + decks.size() + ".",
+                        "Watch Pod Needs Four Decks",
+                        JOptionPane.WARNING_MESSAGE
+                );
+                return;
+            }
+
+            runner.runWatchGame(decks);
+        } catch (Throwable error) {
+            showError("Watch Game unavailable", error);
+        }
     }
 
     private void importDeck() {
@@ -824,7 +877,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         try {
             File log = new File(
                     HouseDesktopPaths.logsDir(),
-                    "desktop-test-game.log"
+                    "desktop-watch-game.log"
             );
             if (!log.isFile()) {
                 return;
