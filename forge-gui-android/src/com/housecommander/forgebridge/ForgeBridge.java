@@ -21,7 +21,7 @@ import forge.game.GameRules;
 import forge.game.GameType;
 import forge.game.Match;
 import forge.game.card.Card;
-import forge.game.card.CardStateName;
+import forge.card.CardStateName;
 import forge.game.card.CounterType;
 import forge.game.combat.Combat;
 import forge.game.event.Event;
