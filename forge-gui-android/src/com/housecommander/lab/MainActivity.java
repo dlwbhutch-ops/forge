@@ -5,15 +5,19 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.LruCache;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -22,6 +26,7 @@ import android.widget.TextView;
 import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
 import com.housecommander.forgebridge.ForgeBridge;
+import com.housecommander.forgebridge.HouseCardImageService;
 import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
@@ -70,6 +75,7 @@ public final class MainActivity extends Activity {
     private DeckLibraryController libraryController;
     private long shownPilotDecisionId = -1L;
     private boolean pilotDialogOpen;
+    private final LruCache<String, Bitmap> cardBitmapCache = new LruCache<>(80);
 
     private boolean preflightPass;
     private boolean engineAvailable;
@@ -153,7 +159,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.15 • Play vs AI • Unified HOUSE Lab\n"
+                "Bridge 0.16 • Real Card Visuals • Play vs AI\n"
                         + installedVersion,
                 14,
                 false
@@ -843,45 +849,224 @@ public final class MainActivity extends Activity {
     }
 
     private View buildCardTile(SpectatorCardGroup group) {
-        LiveGameState.CardState card = group.card();
+        final LiveGameState.CardState card = group.card();
         String count = group.count() > 1 ? " ×" + group.count() : "";
 
-        StringBuilder value = new StringBuilder();
-        if (card.tapped()) {
-            value.append("↷ ");
-        }
-        value.append(card.name()).append(count).append("\n");
-
-        if (card.creature()) {
-            value.append(card.power()).append("/").append(card.toughness());
-        }
-        if (card.attacking()) {
-            appendDetail(value, "ATTACK");
-        }
-        if (card.blocking()) {
-            appendDetail(value, "BLOCK");
-        }
-        if (card.token()) {
-            appendDetail(value, "TOKEN");
-        }
-        if (!card.counters().isEmpty()) {
-            appendDetail(value, join(card.counters()));
-        }
-
-        TextView tile = text(value.toString().trim(), 11, true);
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER);
-        tile.setMinWidth(dp(128));
-        tile.setMinHeight(dp(76));
-        tile.setPadding(dp(8), dp(6), dp(8), dp(6));
+        tile.setPadding(dp(5), dp(5), dp(5), dp(5));
         tile.setBackgroundResource(android.R.drawable.editbox_background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                dp(148),
+                dp(154),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        params.setMargins(0, 0, dp(5), 0);
+        params.setMargins(0, 0, dp(6), 0);
         tile.setLayoutParams(params);
+
+        TextView name = text(card.name() + count, 10, true);
+        name.setGravity(Gravity.CENTER);
+        tile.addView(name);
+
+        Bitmap bitmap = cardBitmap(card);
+        if (bitmap != null) {
+            ImageView art = new ImageView(this);
+            art.setImageBitmap(bitmap);
+            art.setAdjustViewBounds(true);
+            art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            art.setRotation(card.tapped() ? 90f : 0f);
+            LinearLayout.LayoutParams artParams = new LinearLayout.LayoutParams(
+                    dp(132),
+                    dp(148)
+            );
+            artParams.gravity = Gravity.CENTER;
+            art.setLayoutParams(artParams);
+            tile.addView(art);
+        } else {
+            TextView placeholder = text("art loading / unavailable", 9, false);
+            placeholder.setGravity(Gravity.CENTER);
+            placeholder.setMinHeight(dp(112));
+            tile.addView(placeholder);
+        }
+
+        StringBuilder detail = new StringBuilder();
+        if (card.creature()) {
+            detail.append(card.power()).append("/").append(card.toughness());
+        }
+        if (card.tapped()) {
+            appendDetail(detail, "TAPPED");
+        }
+        if (card.attacking()) {
+            appendDetail(detail, "ATTACK");
+        }
+        if (card.blocking()) {
+            appendDetail(detail, "BLOCK");
+        }
+        if (card.token()) {
+            appendDetail(detail, "TOKEN");
+        }
+        if (!card.counters().isEmpty()) {
+            appendDetail(detail, join(card.counters()));
+        }
+
+        TextView state = text(
+                detail.length() == 0 ? "ready" : detail.toString(),
+                9,
+                false
+        );
+        state.setGravity(Gravity.CENTER);
+        tile.addView(state);
+
+        tile.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showCardZoom(card);
+            }
+        });
         return tile;
+    }
+
+    private Bitmap cardBitmap(final LiveGameState.CardState card) {
+        if (card.imageKey().isEmpty()) {
+            return null;
+        }
+
+        String cacheKey = card.imageKey() + "|thumb";
+        Bitmap cached = cardBitmapCache.get(cacheKey);
+        if (cached != null && !cached.isRecycled()) {
+            return cached;
+        }
+
+        File file = HouseCardImageService.localFile(card.imageKey());
+        if (file == null) {
+            HouseCardImageService.request(
+                    card.imageKey(),
+                    card.imageFetchKey(),
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    refreshWatchView();
+                                }
+                            });
+                        }
+                    }
+            );
+            return null;
+        }
+
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.RGB_565;
+            options.inSampleSize = 2;
+            Bitmap source = BitmapFactory.decodeFile(
+                    file.getAbsolutePath(),
+                    options
+            );
+            if (source == null) {
+                return null;
+            }
+            Bitmap scaled = Bitmap.createScaledBitmap(
+                    source,
+                    dp(104),
+                    dp(145),
+                    true
+            );
+            if (scaled != source) {
+                source.recycle();
+            }
+            cardBitmapCache.put(cacheKey, scaled);
+            return scaled;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void showCardZoom(final LiveGameState.CardState card) {
+        File file = HouseCardImageService.localFile(card.imageKey());
+        if (file == null) {
+            HouseCardImageService.request(
+                    card.imageKey(),
+                    card.imageFetchKey(),
+                    null
+            );
+            new AlertDialog.Builder(this)
+                    .setTitle(card.name())
+                    .setMessage("Fetching exact card art. Tap the card again in a moment.")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
+
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap source = BitmapFactory.decodeFile(
+                    file.getAbsolutePath(),
+                    options
+            );
+            if (source == null) {
+                throw new IllegalStateException("Card image could not be decoded");
+            }
+
+            ImageView image = new ImageView(this);
+            image.setImageBitmap(source);
+            image.setAdjustViewBounds(true);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            image.setPadding(dp(8), dp(8), dp(8), dp(8));
+
+            AlertDialog dialog = new AlertDialog.Builder(this)
+                    .setTitle(card.name())
+                    .setView(image)
+                    .setMessage(cardDetailText(card))
+                    .setPositiveButton("Close", null)
+                    .create();
+            dialog.setOnDismissListener(
+                    new android.content.DialogInterface.OnDismissListener() {
+                        @Override
+                        public void onDismiss(
+                                android.content.DialogInterface ignored
+                        ) {
+                            if (!source.isRecycled()) {
+                                source.recycle();
+                            }
+                        }
+                    }
+            );
+            dialog.show();
+        } catch (Throwable error) {
+            new AlertDialog.Builder(this)
+                    .setTitle(card.name())
+                    .setMessage("Card art could not be opened: " + safeMessage(error))
+                    .setPositiveButton("OK", null)
+                    .show();
+        }
+    }
+
+    private static String cardDetailText(LiveGameState.CardState card) {
+        StringBuilder out = new StringBuilder();
+        if (card.creature()) {
+            out.append(card.power()).append("/").append(card.toughness());
+        }
+        if (card.tapped()) {
+            appendDetail(out, "TAPPED");
+        }
+        if (card.attacking()) {
+            appendDetail(out, "ATTACKING");
+        }
+        if (card.blocking()) {
+            appendDetail(out, "BLOCKING");
+        }
+        if (card.token()) {
+            appendDetail(out, "TOKEN");
+        }
+        if (!card.counters().isEmpty()) {
+            appendDetail(out, join(card.counters()));
+        }
+        return out.length() == 0 ? "Ready" : out.toString();
     }
 
     private static boolean matchesCategory(
