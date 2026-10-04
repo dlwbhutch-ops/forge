@@ -704,7 +704,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
         int choice = JOptionPane.showConfirmDialog(
                 this,
-                "Restore the bundled HOUSE 19?\n"
+                "Restore the bundled default 19-deck roster?\n"
                         + "Imported decks will remain in the Deck Library.",
                 "Restore Default HOUSE Roster",
                 JOptionPane.OK_CANCEL_OPTION
