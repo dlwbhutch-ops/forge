@@ -919,6 +919,7 @@ public final class MainActivity extends Activity {
 
         TextView zones = text(
                 "Commander: " + zoneSummary(player.commanders(), 3)
+                        + "\nCommander damage: " + commanderDamageSummary(player.commanderDamage())
                         + "\nCommand zone: " + zoneSummary(player.command(), 4)
                         + "\nGraveyard (" + player.graveyard().size() + "): "
                         + zoneSummary(player.graveyard(), 5)
@@ -1204,6 +1205,25 @@ public final class MainActivity extends Activity {
             out.append(value);
         }
         return out.toString();
+    }
+
+    private static String commanderDamageSummary(
+            List<LiveGameState.CommanderDamageState> values
+    ) {
+        if (values == null || values.isEmpty()) {
+            return "—";
+        }
+        StringBuilder out = new StringBuilder();
+        for (LiveGameState.CommanderDamageState value : values) {
+            if (value == null || value.damage() <= 0) {
+                continue;
+            }
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append(value.commander()).append(" ").append(value.damage()).append("/21");
+        }
+        return out.length() == 0 ? "—" : out.toString();
     }
 
     private static String zoneSummary(List<String> cards, int limit) {
