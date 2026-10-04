@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.15 Play vs AI
+HOUSE Commander Lab 0.16 Card Visuals
 
 Requires Java 17 or newer.
 
@@ -51,3 +51,4 @@ target-selection plumbing. The same 0.14 live battlefield remains visible in Wat
 
 There is no fixed maximum tournament roster size. Schedule generation scales with
 the selected roster instead of reserving a fixed number of HOUSE seats.
+\n\n0.16 renders exact Forge/Scryfall card-print art on the live battlefield,\nincluding cached token art, true tapped rotation, click/tap zoom, and bounded image\ncaches. Missing art is fetched in the background with request pacing and stored in\nForge's existing image cache. Token-safe pile grouping remains active.\n
