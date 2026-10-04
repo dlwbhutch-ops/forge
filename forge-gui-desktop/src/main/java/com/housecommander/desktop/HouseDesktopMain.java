@@ -16,6 +16,7 @@ import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -37,6 +38,8 @@ import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
@@ -55,6 +58,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
     private final DesktopDeckLibraryStore libraryStore = new DesktopDeckLibraryStore();
     private final DesktopTournamentRunner runner = new DesktopTournamentRunner(this);
+    private final DesktopCardArtCache cardArtCache = new DesktopCardArtCache();
+    private final Set<String> seenVisualPiles = new HashSet<String>();
 
     private final JLabel librarySummary = new JLabel("Loading Deck Library…");
     private final JLabel engineStatus = new JLabel("Forge engine: starting…");
@@ -94,7 +99,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.15");
+        super("HOUSE Commander Lab 0.16");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -107,6 +112,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             @Override
             public void windowClosing(WindowEvent event) {
                 runner.shutdown();
+                cardArtCache.shutdown();
                 dispose();
             }
         });
@@ -127,7 +133,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.15 • Play vs AI • Unified HOUSE Lab"
+                "Desktop 0.16 • Real Card Battlefield • Unified HOUSE Lab"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
@@ -895,6 +901,10 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         DesktopStateStore.State run = runner.state();
         LiveGameState live = ForgeBridge.liveGameState();
 
+        if (live.sequence() <= 1L) {
+            seenVisualPiles.clear();
+        }
+
         if (live.sequence() > 1L) {
             String winner = live.winner().isEmpty() ? "" : " • winner " + live.winner();
             watchStatus.setText(
@@ -1064,18 +1074,49 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         LiveGameState.CardState card = group.card();
         JPanel tile = new JPanel(new BorderLayout(3, 3));
         tile.setBorder(BorderFactory.createEtchedBorder());
-        tile.setPreferredSize(new Dimension(130, 74));
+        tile.setPreferredSize(
+                card.tapped()
+                        ? new Dimension(154, 122)
+                        : new Dimension(116, 170)
+        );
 
         String count = group.count() > 1 ? " ×" + group.count() : "";
-        JLabel name = new JLabel(
-                "<html><center>"
-                        + escapeHtml(card.name())
-                        + count
-                        + "</center></html>",
+        JLabel badge = new JLabel(
+                group.count() > 1 ? "×" + group.count() : " ",
                 JLabel.CENTER
         );
-        name.setFont(name.getFont().deriveFont(Font.BOLD, 11f));
-        tile.add(name, BorderLayout.CENTER);
+        badge.setFont(badge.getFont().deriveFont(Font.BOLD, 11f));
+        tile.add(badge, BorderLayout.NORTH);
+
+        ImageIcon icon = cardArtCache.cardIcon(
+                card,
+                card.tapped() ? 142 : 100,
+                card.tapped() ? 96 : 140,
+                this::refreshWatch
+        );
+        JLabel face = new JLabel("", JLabel.CENTER);
+        if (icon != null) {
+            face.setIcon(icon);
+        } else {
+            face.setText(
+                    "<html><center>"
+                            + escapeHtml(card.name())
+                            + count
+                            + "<br><small>"
+                            + (card.imageUrl().isEmpty()
+                            ? "art unavailable"
+                            : "loading art…")
+                            + "</small></center></html>"
+            );
+        }
+        face.setToolTipText("Click to zoom • " + card.name());
+        face.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent event) {
+                showCardZoom(card);
+            }
+        });
+        tile.add(face, BorderLayout.CENTER);
 
         String details = cardDetail(card);
         JLabel state = new JLabel(
@@ -1085,7 +1126,67 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         state.setFont(state.getFont().deriveFont(10f));
         tile.add(state, BorderLayout.SOUTH);
         tile.setToolTipText(card.name() + " — " + details);
+
+        String visualKey = card.imageKey()
+                + "|"
+                + card.name()
+                + "|"
+                + card.tapped()
+                + "|"
+                + details
+                + "|"
+                + group.count();
+        if (seenVisualPiles.add(visualKey)) {
+            pulseTile(tile);
+        }
         return tile;
+    }
+
+    private void showCardZoom(LiveGameState.CardState card) {
+        ImageIcon zoom = cardArtCache.zoomIcon(
+                card,
+                488,
+                680,
+                () -> showCardZoom(card)
+        );
+        if (zoom == null) {
+            return;
+        }
+
+        JPanel content = new JPanel(new BorderLayout(8, 8));
+        content.add(new JLabel(zoom, JLabel.CENTER), BorderLayout.CENTER);
+        JLabel details = new JLabel(
+                "<html><center><b>"
+                        + escapeHtml(card.name())
+                        + "</b><br>"
+                        + escapeHtml(cardDetail(card))
+                        + "</center></html>",
+                JLabel.CENTER
+        );
+        content.add(details, BorderLayout.SOUTH);
+
+        JOptionPane.showMessageDialog(
+                this,
+                content,
+                card.name(),
+                JOptionPane.PLAIN_MESSAGE
+        );
+    }
+
+    private static void pulseTile(JPanel tile) {
+        javax.swing.border.Border normal = BorderFactory.createEtchedBorder();
+        javax.swing.border.Border pulse =
+                BorderFactory.createLineBorder(tile.getForeground(), 2);
+        final int[] step = {0};
+        Timer timer = new Timer(90, event -> {
+            step[0]++;
+            tile.setBorder((step[0] % 2 == 0) ? normal : pulse);
+            if (step[0] >= 6) {
+                ((Timer) event.getSource()).stop();
+                tile.setBorder(normal);
+            }
+        });
+        timer.start();
     }
 
     private static boolean matchesCategory(
