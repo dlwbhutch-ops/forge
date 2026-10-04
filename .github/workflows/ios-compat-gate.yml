@@ -1,5 +1,9 @@
 name: iOS compatibility gate
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Fast (~5 min), Apple-free check that the codebase still runs on iOS/MobiVM:
 # runs the JvmDowngrader transform + MobiVmBridge + linkage audit on a Linux
 # runner and FAILS when Java code reachable from Forge would crash on device
