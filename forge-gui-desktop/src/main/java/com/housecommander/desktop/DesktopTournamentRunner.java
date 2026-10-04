@@ -121,6 +121,51 @@ public final class DesktopTournamentRunner {
         });
     }
 
+    public void runWatchGame(List<DeckSpec> selectedDecks) {
+        if (active) {
+            return;
+        }
+        if (selectedDecks == null || selectedDecks.size() != 4) {
+            throw new IllegalArgumentException("Watch Game requires exactly four decks");
+        }
+
+        final List<DeckSpec> decks = new ArrayList<DeckSpec>(selectedDecks);
+        active = true;
+        executor.execute(() -> {
+            try {
+                DesktopForgeBootstrap.ensureReady(this::emitEngine);
+
+                DesktopStateStore.State state = stateStore.load();
+                state.status = "TESTING";
+                state.lastMessage = "Watching selected literal Forge pod";
+                stateStore.save(state);
+                emit(state);
+
+                File log = new File(HouseDesktopPaths.logsDir(), "desktop-watch-game.log");
+                String winner = ForgeBridge.runCommanderGame(
+                        deckPaths(decks),
+                        log.getAbsolutePath(),
+                        HARD_TIMEOUT_SECONDS,
+                        STALL_TIMEOUT_SECONDS
+                );
+                String displayWinner = validateWinner(decks, winner);
+
+                state = stateStore.load();
+                state.status = "TEST_COMPLETE";
+                state.lastMessage = "Watch winner: "
+                        + displayWinner
+                        + " • "
+                        + ForgeBridge.version();
+                stateStore.save(state);
+                emit(state);
+            } catch (Throwable error) {
+                fail(error);
+            } finally {
+                active = false;
+            }
+        });
+    }
+
     public void runTournament(int requestedGauntlets) {
         if (active) {
             return;
