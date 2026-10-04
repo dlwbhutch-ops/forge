@@ -11,6 +11,8 @@ import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
+import com.housecommander.forgebridge.SpectatorPlayback;
+import com.housecommander.forgebridge.SpectatorTransition;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -35,6 +37,7 @@ public final class HouseDesktopSmoke {
 
         verifyDeckManagement(pack);
         verifySpectatorGrouping();
+        verifySpectatorPlaybackAndTransitions();
         verifyPilotDecisionBridge();
         verifyExpandedRoster(pack);
 
@@ -204,6 +207,139 @@ public final class HouseDesktopSmoke {
 
         PilotDecisionBridge.reset();
         System.out.println("DESKTOP_PILOT_DECISION_PASS");
+    }
+
+    private static void verifySpectatorPlaybackAndTransitions() {
+        LiveGameState.CardState ready = new LiveGameState.CardState(
+                "Test Commander",
+                "test-key",
+                "",
+                false,
+                false,
+                false,
+                true,
+                false,
+                false,
+                false,
+                3,
+                3,
+                Collections.emptyList()
+        );
+        LiveGameState.CardState attacking = new LiveGameState.CardState(
+                "Test Commander",
+                "test-key",
+                "",
+                true,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                3,
+                3,
+                Collections.emptyList()
+        );
+
+        LiveGameState.PlayerState beforePlayer = new LiveGameState.PlayerState(
+                "Player A",
+                40,
+                0,
+                7,
+                92,
+                false,
+                Collections.singletonList(ready),
+                Collections.singletonList("Test Commander"),
+                Collections.singletonList("Test Commander • casts 0 • next tax +0"),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+        LiveGameState.PlayerState afterPlayer = new LiveGameState.PlayerState(
+                "Player A",
+                37,
+                0,
+                6,
+                91,
+                false,
+                Collections.singletonList(attacking),
+                Collections.singletonList("Test Commander"),
+                Collections.singletonList("Test Commander • casts 0 • next tax +0"),
+                Collections.singletonList(
+                        new LiveGameState.CommanderDamageState("Enemy Commander", 3)
+                ),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+
+        LiveGameState before = new LiveGameState(
+                2L,
+                "GameEventPhase",
+                1,
+                "MAIN1",
+                "Player A",
+                Collections.singletonList(beforePlayer),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                false,
+                ""
+        );
+        LiveGameState after = new LiveGameState(
+                3L,
+                "GameEventAttackersDeclared",
+                1,
+                "COMBAT_DECLARE_ATTACKERS",
+                "Player A",
+                Collections.singletonList(afterPlayer),
+                Collections.singletonList("Test Bolt"),
+                Collections.singletonList(
+                        new LiveGameState.StackState(
+                                "Test Bolt",
+                                "Test Bolt deals 3 damage",
+                                "Player A",
+                                Collections.singletonList("Player B")
+                        )
+                ),
+                false,
+                ""
+        );
+
+        List<SpectatorTransition.Transition> transitions =
+                SpectatorTransition.diff(before, after);
+        boolean sawLife = false;
+        boolean sawCommanderDamage = false;
+        boolean sawAttack = false;
+        boolean sawStack = false;
+        for (SpectatorTransition.Transition transition : transitions) {
+            sawLife |= transition.kind() == SpectatorTransition.Kind.LIFE;
+            sawCommanderDamage |= transition.kind()
+                    == SpectatorTransition.Kind.COMMANDER_DAMAGE;
+            sawAttack |= transition.kind() == SpectatorTransition.Kind.ATTACK;
+            sawStack |= transition.kind() == SpectatorTransition.Kind.STACK_ADD;
+        }
+        if (!sawLife || !sawCommanderDamage || !sawAttack || !sawStack) {
+            throw new AssertionError(
+                    "Spectator transition diff missed expected events: "
+                            + transitions.size()
+            );
+        }
+
+        SpectatorPlayback.reset(before);
+        SpectatorPlayback.record(after);
+        SpectatorPlayback.pause();
+        if (SpectatorPlayback.latestState().sequence() != 3L) {
+            throw new AssertionError("Spectator playback did not retain latest frame");
+        }
+        SpectatorPlayback.nextAction();
+        if (SpectatorPlayback.visibleState().sequence() != 3L) {
+            throw new AssertionError("Spectator step action did not advance one frame");
+        }
+        SpectatorPlayback.goLive();
+
+        System.out.println(
+                "DESKTOP_SPECTATOR_PLAYBACK_PASS transitions="
+                        + transitions.size()
+        );
     }
 
     private static void verifySpectatorGrouping() {
