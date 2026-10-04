@@ -213,6 +213,7 @@ public final class LiveGameState {
         private final List<CardState> battlefield;
         private final List<String> command;
         private final List<String> commanders;
+        private final List<CommanderDamageState> commanderDamage;
         private final List<String> graveyard;
         private final List<String> exile;
 
@@ -229,6 +230,36 @@ public final class LiveGameState {
                 List<String> graveyard,
                 List<String> exile
         ) {
+            this(
+                    name,
+                    life,
+                    poison,
+                    handCount,
+                    libraryCount,
+                    lost,
+                    battlefield,
+                    command,
+                    commanders,
+                    Collections.emptyList(),
+                    graveyard,
+                    exile
+            );
+        }
+
+        public PlayerState(
+                String name,
+                int life,
+                int poison,
+                int handCount,
+                int libraryCount,
+                boolean lost,
+                List<CardState> battlefield,
+                List<String> command,
+                List<String> commanders,
+                List<CommanderDamageState> commanderDamage,
+                List<String> graveyard,
+                List<String> exile
+        ) {
             this.name = safe(name);
             this.life = life;
             this.poison = poison;
@@ -238,6 +269,7 @@ public final class LiveGameState {
             this.battlefield = immutable(battlefield);
             this.command = immutableStrings(command);
             this.commanders = immutableStrings(commanders);
+            this.commanderDamage = immutable(commanderDamage);
             this.graveyard = immutableStrings(graveyard);
             this.exile = immutableStrings(exile);
         }
@@ -278,12 +310,35 @@ public final class LiveGameState {
             return commanders;
         }
 
+        public List<CommanderDamageState> commanderDamage() {
+            return commanderDamage;
+        }
+
         public List<String> graveyard() {
             return graveyard;
         }
 
         public List<String> exile() {
             return exile;
+        }
+    }
+
+    /** Commander combat damage received by a player from one commander. */
+    public static final class CommanderDamageState {
+        private final String commander;
+        private final int damage;
+
+        public CommanderDamageState(String commander, int damage) {
+            this.commander = safe(commander);
+            this.damage = Math.max(0, damage);
+        }
+
+        public String commander() {
+            return commander;
+        }
+
+        public int damage() {
+            return damage;
         }
     }
 
