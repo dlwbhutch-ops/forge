@@ -19,6 +19,10 @@ javac -encoding UTF-8 -cp "$runtime_classpath" -d house-smoke-classes \
   forge-gui-android/src/com/housecommander/forgebridge/HouseForgeRuntime.java \
   forge-gui-android/src/com/housecommander/forgebridge/ForgeDeckLoader.java \
   forge-gui-android/src/com/housecommander/forgebridge/LiveGameState.java \
+  forge-gui-android/src/com/housecommander/forgebridge/PilotDecision.java \
+  forge-gui-android/src/com/housecommander/forgebridge/PilotDecisionBridge.java \
+  forge-gui-android/src/com/housecommander/forgebridge/HousePilotController.java \
+  forge-gui-android/src/com/housecommander/forgebridge/HousePilotLobbyPlayer.java \
   forge-gui-android/src/com/housecommander/forgebridge/ForgeBridge.java \
   .github/scripts/HouseRuntimeSmoke.java
 timeout 360 java -Xmx512m -cp "house-smoke-classes:$runtime_classpath" \
