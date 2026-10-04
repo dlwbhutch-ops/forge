@@ -16,6 +16,7 @@ import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.core.Names;
 import com.housecommander.core.PodSpec;
+import com.housecommander.lab.DeckLibraryStore;
 import com.housecommander.lab.HouseRuntime;
 import com.housecommander.lab.MainActivity;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
@@ -45,8 +46,10 @@ import java.util.concurrent.Executors;
 public final class TournamentService extends Service {
     public static final String ACTION_RUN = "com.housecommander.lab.RUN";
     public static final String ACTION_TEST = "com.housecommander.lab.TEST";
+    public static final String ACTION_WATCH = "com.housecommander.lab.WATCH";
     public static final String ACTION_PAUSE = "com.housecommander.lab.PAUSE";
     public static final String EXTRA_GAUNTLETS = "gauntlets";
+    public static final String EXTRA_WATCH_DECKS = "watch_decks";
 
     private static final int NOTIFICATION_ID = 1901;
     private static final String CHANNEL_ID = "house_tournament";
@@ -90,7 +93,9 @@ public final class TournamentService extends Service {
             return START_NOT_STICKY;
         }
 
-        if (!ACTION_TEST.equals(action) && !ACTION_RUN.equals(action)) {
+        if (!ACTION_TEST.equals(action)
+                && !ACTION_WATCH.equals(action)
+                && !ACTION_RUN.equals(action)) {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
@@ -111,6 +116,14 @@ public final class TournamentService extends Service {
                 @Override
                 public void run() {
                     runEngineTest(workerStartId);
+                }
+            });
+        } else if (ACTION_WATCH.equals(action)) {
+            final String[] watchDecks = intent.getStringArrayExtra(EXTRA_WATCH_DECKS);
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    runWatchGame(workerStartId, watchDecks);
                 }
             });
         } else {
@@ -172,6 +185,95 @@ public final class TournamentService extends Service {
         } finally {
             finishWorker(startId);
         }
+    }
+
+    private void runWatchGame(int startId, String[] requestedDeckNames) {
+        StateStore store = new StateStore(this);
+        RunState state = store.load();
+
+        try {
+            if (requestedDeckNames == null || requestedDeckNames.length != 4) {
+                throw new IllegalArgumentException(
+                        "Watch Game requires exactly four selected decks"
+                );
+            }
+
+            HousePackage template = HouseRuntime.loadTemplatePackage(this);
+            List<DeckSpec> library = new DeckLibraryStore(this).allDecks(template);
+            List<DeckSpec> decks = resolveSelectedDecks(library, requestedDeckNames);
+
+            ForgeEngineAdapter engine = new ForgeEngineAdapter(this);
+            if (!engine.isAvailable()) {
+                throw new IllegalStateException(engine.status());
+            }
+
+            state.status = "TESTING";
+            state.lastMessage = "Watching selected literal Forge pod";
+            store.save(state);
+            updateNotification(state.lastMessage);
+
+            File log = new File(getFilesDir(), "logs/watch/watch_game.log");
+            GameOutcome outcome = engine.runCommanderGame(
+                    decks,
+                    log,
+                    HARD_TIMEOUT_SECONDS,
+                    STALL_TIMEOUT_SECONDS
+            );
+            String winner = validateWinner(decks, outcome.winner());
+
+            state = store.load();
+            state.status = "TEST_COMPLETE";
+            state.lastMessage = "Watch winner: "
+                    + winner
+                    + " • "
+                    + outcome.engineVersion();
+            store.save(state);
+            updateNotification(state.lastMessage);
+        } catch (Throwable t) {
+            state = store.load();
+            state.status = "BLOCKED";
+            state.lastMessage = safeMessage(t);
+            store.save(state);
+            updateNotification("Blocked: " + state.lastMessage);
+        } finally {
+            finishWorker(startId);
+        }
+    }
+
+    private List<DeckSpec> resolveSelectedDecks(
+            List<DeckSpec> library,
+            String[] names
+    ) {
+        List<DeckSpec> out = new ArrayList<DeckSpec>();
+        for (String name : names) {
+            DeckSpec match = null;
+            String key = Names.canonical(name);
+            for (DeckSpec deck : library) {
+                if (Names.canonical(deck.deck()).equals(key)) {
+                    match = deck;
+                    break;
+                }
+            }
+            if (match == null) {
+                throw new IllegalStateException(
+                        "Selected Watch deck is missing from the Deck Library: " + name
+                );
+            }
+            for (DeckSpec existing : out) {
+                if (Names.canonical(existing.deck()).equals(key)) {
+                    throw new IllegalArgumentException(
+                            "Watch Game cannot use the same deck twice: " + name
+                    );
+                }
+            }
+            out.add(match);
+        }
+        if (out.size() != 4) {
+            throw new IllegalStateException(
+                    "Watch Game resolved " + out.size() + " decks; expected 4"
+            );
+        }
+        return out;
     }
 
     private void runTournament(int startId, int requestedGauntlets) {
