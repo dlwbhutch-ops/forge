@@ -28,6 +28,7 @@ import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
+import com.housecommander.forgebridge.SpectatorPlayback;
 import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
@@ -317,6 +318,78 @@ public final class MainActivity extends Activity {
         watchStatus = text("Spectator board ready", 16, true);
         watchStatus.setPadding(0, dp(8), 0, dp(6));
         root.addView(watchStatus);
+
+        HorizontalScrollView playbackScroll = new HorizontalScrollView(this);
+        playbackScroll.setHorizontalScrollBarEnabled(true);
+        LinearLayout playbackRow = new LinearLayout(this);
+        playbackRow.setOrientation(LinearLayout.HORIZONTAL);
+        playbackRow.setPadding(0, 0, 0, dp(6));
+        playbackScroll.addView(playbackRow);
+
+        playbackRow.addView(playbackButton("Pause view", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.pause();
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("1x", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X1);
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("2x", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X2);
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("4x", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X4);
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("8x", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.setSpeed(SpectatorPlayback.Speed.X8);
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("Max / live", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.goLive();
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("Step action", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.nextAction();
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("Step phase", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.nextPhase();
+                refreshWatchView();
+            }
+        }));
+        playbackRow.addView(playbackButton("Step turn", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SpectatorPlayback.nextTurn();
+                refreshWatchView();
+            }
+        }));
+        root.addView(playbackScroll);
 
         watchBoard = new LinearLayout(this);
         watchBoard.setOrientation(LinearLayout.VERTICAL);
@@ -668,7 +741,7 @@ public final class MainActivity extends Activity {
         }
 
         RunState run = new StateStore(this).load();
-        LiveGameState live = ForgeBridge.liveGameState();
+        LiveGameState live = SpectatorPlayback.visibleState();
 
         if (live.sequence() <= 1L) {
             seenVisualPiles.clear();
@@ -683,6 +756,10 @@ public final class MainActivity extends Activity {
                             ? ""
                             : " • active " + live.activePlayer())
                             + " • " + live.lastEvent()
+                            + " • viewer " + SpectatorPlayback.speed().label()
+                            + (SpectatorPlayback.framesBehind() > 0
+                            ? " • " + SpectatorPlayback.framesBehind() + " frames behind"
+                            : " • live")
                             + winner
             );
         } else if ("TESTING".equals(run.status)) {
@@ -1160,6 +1237,21 @@ public final class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
         p.setMargins(0, dp(5), 0, dp(5));
+        b.setLayoutParams(p);
+        return b;
+    }
+
+    private Button playbackButton(String value, View.OnClickListener listener) {
+        Button b = new Button(this);
+        b.setText(value);
+        b.setAllCaps(false);
+        b.setGravity(Gravity.CENTER);
+        b.setOnClickListener(listener);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        p.setMargins(0, dp(3), dp(4), dp(3));
         b.setLayoutParams(p);
         return b;
     }
