@@ -24,6 +24,7 @@ import android.widget.TextView;
 import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
 import com.housecommander.forgebridge.ForgeBridge;
+import com.housecommander.forgebridge.FriendlyGameLog;
 import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
@@ -71,7 +72,11 @@ public final class MainActivity extends Activity {
     private TextView watchStatus;
     private LinearLayout watchBoard;
     private TextView watchStack;
+    private TextView watchFeed;
+    private TextView watchTurnSummary;
     private TextView watchDetails;
+    private Button technicalLogButton;
+    private boolean technicalLogVisible;
     private DeckLibraryController libraryController;
     private AndroidCardArtCache cardArtCache;
     private final Set<String> seenVisualPiles = new HashSet<String>();
@@ -165,7 +170,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.17 • Unified Distribution • Play + Watch + Decks + Tournaments\n"
+                "Bridge 0.18 • Friendly Game Feed • Play + Watch + Decks + Tournaments\n"
                         + installedVersion,
                 14,
                 false
@@ -402,17 +407,55 @@ public final class MainActivity extends Activity {
         watchStack.setPadding(0, dp(6), 0, dp(8));
         root.addView(watchStack);
 
-        TextView logLabel = text("Forge event log", 12, true);
-        root.addView(logLabel);
+        TextView feedLabel = text("GAME FEED", 12, true);
+        root.addView(feedLabel);
+
+        watchFeed = text(
+                "Game feed is ready. Start a literal Forge game to see the story here.",
+                13,
+                false
+        );
+        watchFeed.setTextIsSelectable(true);
+        watchFeed.setPadding(0, dp(4), 0, dp(10));
+        root.addView(watchFeed);
+
+        TextView summaryLabel = text("TURN SUMMARY", 12, true);
+        root.addView(summaryLabel);
+
+        watchTurnSummary = text(
+                "Turn summary will appear once play begins.",
+                13,
+                false
+        );
+        watchTurnSummary.setTextIsSelectable(true);
+        watchTurnSummary.setPadding(0, dp(4), 0, dp(8));
+        root.addView(watchTurnSummary);
+
+        technicalLogButton = button("Show technical Forge log");
+        technicalLogButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                technicalLogVisible = !technicalLogVisible;
+                watchDetails.setVisibility(
+                        technicalLogVisible ? View.VISIBLE : View.GONE
+                );
+                technicalLogButton.setText(
+                        technicalLogVisible
+                                ? "Hide technical Forge log"
+                                : "Show technical Forge log"
+                );
+            }
+        });
+        root.addView(technicalLogButton);
 
         watchDetails = text(
-                "Run & watch a literal Forge game. The battlefield, public zones, "
-                        + "turn/phase, and stack will render above.",
+                "Raw Forge diagnostics will appear here when enabled.",
                 11,
                 false
         );
         watchDetails.setTypeface(Typeface.MONOSPACE);
         watchDetails.setTextIsSelectable(true);
+        watchDetails.setVisibility(View.GONE);
         root.addView(watchDetails);
 
         root.addView(section("PLAY VS AI"));
@@ -755,7 +798,6 @@ public final class MainActivity extends Activity {
                             + (live.activePlayer().isEmpty()
                             ? ""
                             : " • active " + live.activePlayer())
-                            + " • " + live.lastEvent()
                             + " • viewer " + SpectatorPlayback.speed().label()
                             + (SpectatorPlayback.framesBehind() > 0
                             ? " • " + SpectatorPlayback.framesBehind() + " frames behind"
@@ -794,6 +836,19 @@ public final class MainActivity extends Activity {
             }
             watchStack.setText(stackText.toString());
         }
+
+        String friendly = FriendlyGameLog.renderFeed(live.sequence(), 100);
+        String gameSummary = FriendlyGameLog.renderGameSummary(live.sequence());
+        if (!gameSummary.isEmpty()) {
+            friendly = friendly + "\n\n" + gameSummary;
+        }
+        watchFeed.setText(friendly);
+
+        String turnSummary = FriendlyGameLog.renderTurnSummary(live.sequence());
+        if (!gameSummary.isEmpty()) {
+            turnSummary = turnSummary + "\n\n" + gameSummary;
+        }
+        watchTurnSummary.setText(turnSummary);
 
         File log;
         if ("PILOTING".equals(run.status)
