@@ -576,6 +576,12 @@ public final class MainActivity extends Activity {
                             android.content.DialogInterface d
                     ) {
                         pilotDialogOpen = false;
+                        PilotDecision stillPending =
+                                PilotDecisionBridge.current();
+                        if (stillPending.pending()
+                                && stillPending.id() == decision.id()) {
+                            shownPilotDecisionId = -1L;
+                        }
                     }
                 }
         );
@@ -697,8 +703,17 @@ public final class MainActivity extends Activity {
             watchStack.setText(stackText.toString());
         }
 
-        File testDir = new File(getFilesDir(), "logs/test");
-        File log = newestLog(testDir);
+        File log;
+        if ("PILOTING".equals(run.status)
+                || "PILOT_COMPLETE".equals(run.status)) {
+            log = new File(
+                    getFilesDir(),
+                    "logs/pilot/pilot-game.log"
+            );
+        } else {
+            File testDir = new File(getFilesDir(), "logs/test");
+            log = newestLog(testDir);
+        }
         if (log == null) {
             return;
         }
