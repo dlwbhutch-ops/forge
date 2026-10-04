@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.15 Play vs AI
+HOUSE Commander Lab 0.16 Real Card Battlefield
 
 Requires Java 17 or newer.
 
@@ -42,7 +42,12 @@ spectator battlefield inside the same HOUSE app. The Watch view shows turn/phase
 active player, life/poison, hand/library counts, public zones, battlefield
 permanents, tap/token/P-T state, and the live stack while retaining the raw Forge
 event log for diagnostics. The UI never reads the mutable Forge game directly.
-\n\n0.14 upgrades Watch with combat-aware card tiles, card counters, commander cast/tax\nstatus, and token-safe battlefield piles. Equivalent permanents are grouped so\nlarge token boards remain inspectable instead of allocating one widget per token.\n
+
+
+0.14 upgrades Watch with combat-aware card tiles, card counters, commander cast/tax
+status, and token-safe battlefield piles. Equivalent permanents are grouped so
+large token boards remain inspectable instead of allocating one widget per token.
+
 
 0.15 activates Assisted Pilot mode. Choose one active Commander deck and play
 against three literal Forge AI seats. HOUSE surfaces legal priority actions and
@@ -51,3 +56,8 @@ target-selection plumbing. The same 0.14 live battlefield remains visible in Wat
 
 There is no fixed maximum tournament roster size. Schedule generation scales with
 the selected roster instead of reserving a fixed number of HOUSE seats.
+
+0.16 adds exact-print card images to the HOUSE battlefield. Art is fetched only
+on demand and cached locally; gameplay remains fully functional offline when art
+is unavailable. Cards support click/tap zoom, tapped rotation, pile badges, and
+new/changed battlefield-entry animation while preserving token-safe grouping.
