@@ -212,6 +212,8 @@ public final class HouseDesktopSmoke {
         for (int i = 0; i < 600; i++) {
             cards.add(new LiveGameState.CardState(
                     "Squirrel Token",
+                    "",
+                    "",
                     false,
                     true,
                     false,
@@ -226,6 +228,8 @@ public final class HouseDesktopSmoke {
         }
         cards.add(new LiveGameState.CardState(
                 "Squirrel Token",
+                "",
+                "",
                 true,
                 true,
                 false,
