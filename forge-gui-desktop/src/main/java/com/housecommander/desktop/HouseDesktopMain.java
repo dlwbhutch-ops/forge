@@ -77,7 +77,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JButton pauseButton = new JButton("Pause After Current Game");
     private final JButton resetButton = new JButton("Reset Tournament");
     private final JButton folderButton = new JButton("Open HOUSE Data Folder");
-    private final JButton watchButton = new JButton("Run & Watch 1 Literal Game");
+    private final JButton watchButton = new JButton("Choose 4 Decks & Watch");
     private final JButton playButton = new JButton("Pilot a Deck vs AI");
     private final JLabel watchStatus = new JLabel("Spectator board ready");
     private final JPanel watchBoard = new JPanel(new GridLayout(2, 2, 8, 8));
@@ -87,7 +87,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.13");
+        super("HOUSE Commander Lab 0.14");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -120,7 +120,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.13 • Live Battlefield • Unified HOUSE Lab"
+                "Desktop 0.14 • Selectable Watch Pods • Unified HOUSE Lab"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
