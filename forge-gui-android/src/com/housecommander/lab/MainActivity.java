@@ -164,7 +164,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.16 • Real Card Battlefield • Unified HOUSE Lab\n"
+                "Bridge 0.16.1 • Real Card Battlefield • Unified HOUSE Lab\n"
                         + installedVersion,
                 14,
                 false
