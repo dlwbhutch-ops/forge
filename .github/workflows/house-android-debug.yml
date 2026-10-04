@@ -10,6 +10,7 @@ on:
       - 'house-watch-game-v013-*'
       - 'house-spectator-board-v014-*'
       - 'house-pilot-v015-*'
+      - 'house-visuals-v016-*'
   workflow_dispatch:
 
 jobs:
