@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.13 Live Battlefield
+HOUSE Commander Lab 0.14 Graphical Spectator Board
 
 Requires Java 17 or newer.
 
@@ -42,3 +42,4 @@ spectator battlefield inside the same HOUSE app. The Watch view shows turn/phase
 active player, life/poison, hand/library counts, public zones, battlefield
 permanents, tap/token/P-T state, and the live stack while retaining the raw Forge
 event log for diagnostics. The UI never reads the mutable Forge game directly.
+\n\n0.14 upgrades Watch with combat-aware card tiles, card counters, commander cast/tax\nstatus, and token-safe battlefield piles. Equivalent permanents are grouped so\nlarge token boards remain inspectable instead of allocating one widget per token.\n
