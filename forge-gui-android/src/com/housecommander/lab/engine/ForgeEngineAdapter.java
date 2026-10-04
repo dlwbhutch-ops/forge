@@ -196,6 +196,114 @@ public final class ForgeEngineAdapter {
     }
 
     /**
+     * Execute one literal Forge multiplayer Commander game with one HOUSE
+     * assisted-human seat.
+     */
+    public GameOutcome runCommanderGameWithPilot(
+            List<DeckSpec> pod,
+            int pilotSeat,
+            File logFile,
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds
+    ) throws Exception {
+        validateArguments(pod, logFile, hardTimeoutSeconds, stallTimeoutSeconds);
+        if (pilotSeat < 0 || pilotSeat >= pod.size()) {
+            throw new IllegalArgumentException(
+                    "Pilot seat " + pilotSeat + " is outside the Commander pod"
+            );
+        }
+
+        if (!isAvailable()) {
+            throw new IllegalStateException(
+                    "STRICT GATE: Forge engine/card database is not ready. "
+                            + "No game was simulated. "
+                            + status()
+            );
+        }
+
+        String[] deckPaths = new String[pod.size()];
+        for (int i = 0; i < pod.size(); i++) {
+            DeckSpec spec = pod.get(i);
+            if (spec == null) {
+                throw new IllegalArgumentException(
+                        "Pod contains a null deck at index " + i
+                );
+            }
+            File deckFile = HouseInstall.deckFile(context, spec);
+            if (deckFile == null || !deckFile.isFile() || !deckFile.canRead()) {
+                throw new IllegalStateException(
+                        "Physical Forge deck file is missing or unreadable for pod index "
+                                + i
+                                + ": "
+                                + (deckFile == null
+                                ? "<null>"
+                                : deckFile.getAbsolutePath())
+                );
+            }
+            deckPaths[i] = deckFile.getAbsolutePath();
+        }
+
+        File parent = logFile.getParentFile();
+        if (parent != null
+                && !parent.exists()
+                && !parent.mkdirs()
+                && !parent.isDirectory()) {
+            throw new IllegalStateException(
+                    "Could not create Forge log directory: "
+                            + parent.getAbsolutePath()
+            );
+        }
+
+        Class<?> bridge = getBridgeClass();
+        Method run = bridge.getMethod(
+                "runCommanderGameWithPilot",
+                String[].class,
+                int.class,
+                String.class,
+                int.class,
+                int.class
+        );
+
+        Object winner;
+        try {
+            winner = run.invoke(
+                    null,
+                    (Object) deckPaths,
+                    pilotSeat,
+                    logFile.getAbsolutePath(),
+                    hardTimeoutSeconds,
+                    stallTimeoutSeconds
+            );
+        } catch (InvocationTargetException e) {
+            rethrowInvocationCause(e);
+            throw new AssertionError("unreachable");
+        }
+
+        String winnerName = winner == null ? "" : winner.toString().trim();
+        if (winnerName.isEmpty()) {
+            throw new IllegalStateException(
+                    "STRICT GATE: Forge returned no verified winner. "
+                            + "HOUSE will not guess a result."
+            );
+        }
+
+        Object forgeVersion;
+        try {
+            Method version = bridge.getMethod("version");
+            forgeVersion = version.invoke(null);
+        } catch (InvocationTargetException e) {
+            rethrowInvocationCause(e);
+            throw new AssertionError("unreachable");
+        }
+
+        return new GameOutcome(
+                winnerName,
+                String.valueOf(forgeVersion),
+                "HOUSE assisted pilot seat " + pilotSeat
+        );
+    }
+
+    /**
      * Compatibility shim for any caller still compiled against bridge 0.6.
      * New HOUSE code should always use the four-argument overload.
      */
