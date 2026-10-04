@@ -21,6 +21,7 @@ import forge.game.GameRules;
 import forge.game.GameType;
 import forge.game.Match;
 import forge.game.card.Card;
+import forge.game.card.CardStateName;
 import forge.game.card.CounterType;
 import forge.game.combat.Combat;
 import forge.game.event.Event;
@@ -31,6 +32,7 @@ import forge.game.player.RegisteredPlayer;
 import forge.game.zone.ZoneType;
 import forge.item.IPaperCard;
 import forge.item.PaperCard;
+import forge.item.PaperToken;
 import forge.localinstance.properties.ForgeConstants;
 import forge.model.FModel;
 import forge.player.GamePlayerUtil;
@@ -959,31 +961,53 @@ public final class ForgeBridge {
     }
 
     private static String cardImageUrl(Card card) {
-        if (card == null || card.isFaceDown() || card.isToken()) {
+        if (card == null || card.isFaceDown()) {
             return "";
         }
         try {
             IPaperCard paper = card.getPaperCard();
-            if (!(paper instanceof PaperCard)) {
+            if (paper == null) {
                 return "";
             }
-            PaperCard cardPrint = (PaperCard) paper;
             CardEdition edition =
-                    StaticData.instance().getEditions().get(cardPrint.getEdition());
+                    StaticData.instance().getEditions().get(paper.getEdition());
             if (edition == null) {
                 return "";
             }
-            String relative = ImageUtil.getScryfallDownloadUrl(
-                    cardPrint,
-                    "front",
-                    edition.getScryfallCode(),
-                    edition.getCardsLangCode(),
-                    false
-            );
-            return ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD + relative;
+
+            CardStateName state = card.getCurrentStateName();
+            String face = state == CardStateName.Backside
+                    || state == CardStateName.Meld
+                    ? "back"
+                    : "front";
+
+            if (paper instanceof PaperCard) {
+                String relative = ImageUtil.getScryfallDownloadUrl(
+                        (PaperCard) paper,
+                        face,
+                        edition.getScryfallCode(),
+                        edition.getCardsLangCode(),
+                        false
+                );
+                return ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD + relative;
+            }
+
+            if (paper instanceof PaperToken
+                    && !IPaperCard.NO_COLLECTOR_NUMBER.equals(
+                            paper.getCollectorNumber()
+                    )) {
+                String relative = ImageUtil.getScryfallTokenDownloadUrl(
+                        paper.getCollectorNumber(),
+                        edition.getScryfallCode(),
+                        edition.getCardsLangCode(),
+                        face
+                );
+                return ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD + relative;
+            }
         } catch (Throwable ignored) {
             return "";
         }
+        return "";
     }
 
     private static List<String> commanderStatus(Player player) {
