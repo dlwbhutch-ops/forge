@@ -144,6 +144,7 @@ public final class LiveGameState {
         private final boolean lost;
         private final List<CardState> battlefield;
         private final List<String> command;
+        private final List<String> commanders;
         private final List<String> graveyard;
         private final List<String> exile;
 
@@ -156,6 +157,7 @@ public final class LiveGameState {
                 boolean lost,
                 List<CardState> battlefield,
                 List<String> command,
+                List<String> commanders,
                 List<String> graveyard,
                 List<String> exile
         ) {
@@ -167,6 +169,7 @@ public final class LiveGameState {
             this.lost = lost;
             this.battlefield = immutable(battlefield);
             this.command = immutableStrings(command);
+            this.commanders = immutableStrings(commanders);
             this.graveyard = immutableStrings(graveyard);
             this.exile = immutableStrings(exile);
         }
@@ -203,6 +206,10 @@ public final class LiveGameState {
             return command;
         }
 
+        public List<String> commanders() {
+            return commanders;
+        }
+
         public List<String> graveyard() {
             return graveyard;
         }
@@ -220,8 +227,11 @@ public final class LiveGameState {
         private final boolean faceDown;
         private final boolean creature;
         private final boolean land;
+        private final boolean attacking;
+        private final boolean blocking;
         private final int power;
         private final int toughness;
+        private final List<String> counters;
 
         public CardState(
                 String name,
@@ -230,8 +240,11 @@ public final class LiveGameState {
                 boolean faceDown,
                 boolean creature,
                 boolean land,
+                boolean attacking,
+                boolean blocking,
                 int power,
-                int toughness
+                int toughness,
+                List<String> counters
         ) {
             this.name = safe(name);
             this.tapped = tapped;
@@ -239,8 +252,11 @@ public final class LiveGameState {
             this.faceDown = faceDown;
             this.creature = creature;
             this.land = land;
+            this.attacking = attacking;
+            this.blocking = blocking;
             this.power = power;
             this.toughness = toughness;
+            this.counters = immutableStrings(counters);
         }
 
         public String name() {
@@ -267,12 +283,24 @@ public final class LiveGameState {
             return land;
         }
 
+        public boolean attacking() {
+            return attacking;
+        }
+
+        public boolean blocking() {
+            return blocking;
+        }
+
         public int power() {
             return power;
         }
 
         public int toughness() {
             return toughness;
+        }
+
+        public List<String> counters() {
+            return counters;
         }
     }
 }
