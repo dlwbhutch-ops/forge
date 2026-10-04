@@ -7,6 +7,7 @@ import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.SpectatorCardGroup;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -87,7 +88,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.13");
+        super("HOUSE Commander Lab 0.14");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -120,7 +121,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.13 • Live Battlefield • Unified HOUSE Lab"
+                "Desktop 0.14 • Graphical Spectator Board • Unified HOUSE Lab"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
@@ -864,47 +865,156 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         header.setFont(header.getFont().deriveFont(Font.BOLD));
         panel.add(header, BorderLayout.NORTH);
 
-        JPanel permanents = new JPanel(new GridLayout(0, 3, 4, 4));
-        if (player.battlefield().isEmpty()) {
-            permanents.add(new JLabel("Battlefield empty", JLabel.CENTER));
-        } else {
-            for (LiveGameState.CardState card : player.battlefield()) {
-                StringBuilder label = new StringBuilder("<html><center>");
-                label.append(card.name());
-                if (card.creature()) {
-                    label.append("<br>").append(card.power()).append("/")
-                            .append(card.toughness());
-                }
-                if (card.tapped()) {
-                    label.append("<br>[tapped]");
-                }
-                if (card.token()) {
-                    label.append(" [token]");
-                }
-                label.append("</center></html>");
-                JLabel cardLabel = new JLabel(label.toString(), JLabel.CENTER);
-                cardLabel.setBorder(BorderFactory.createEtchedBorder());
-                permanents.add(cardLabel);
-            }
-        }
-        panel.add(new JScrollPane(permanents), BorderLayout.CENTER);
+        List<SpectatorCardGroup> groups =
+                SpectatorCardGroup.group(player.battlefield());
+
+        JPanel battlefield = new JPanel(new GridLayout(3, 1, 4, 4));
+        battlefield.add(buildPermanentSection("Creatures", groups, 0));
+        battlefield.add(buildPermanentSection("Lands", groups, 1));
+        battlefield.add(buildPermanentSection("Other permanents", groups, 2));
+
+        JScrollPane battlefieldScroll = new JScrollPane(battlefield);
+        battlefieldScroll.setBorder(BorderFactory.createEmptyBorder());
+        panel.add(battlefieldScroll, BorderLayout.CENTER);
 
         JTextArea zones = new JTextArea();
         zones.setEditable(false);
         zones.setLineWrap(true);
         zones.setWrapStyleWord(true);
         zones.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
-        zones.setRows(4);
+        zones.setRows(5);
         zones.setText(
-                "Command: " + zoneSummary(player.command(), 4)
+                "Commander: " + zoneSummary(player.commanders(), 3)
+                        + "\nCommand zone: " + zoneSummary(player.command(), 4)
                         + "\nGraveyard (" + player.graveyard().size() + "): "
                         + zoneSummary(player.graveyard(), 5)
                         + "\nExile (" + player.exile().size() + "): "
                         + zoneSummary(player.exile(), 5)
+                        + "\nBattlefield: "
+                        + player.battlefield().size()
+                        + " permanents • "
+                        + groups.size()
+                        + " rendered piles"
         );
         panel.add(zones, BorderLayout.SOUTH);
-        panel.setBorder(BorderFactory.createEtchedBorder());
+
+        String borderTitle = player.lost()
+                ? "ELIMINATED"
+                : (active ? "ACTIVE TURN" : "PLAYER");
+        panel.setBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createEtchedBorder(),
+                        borderTitle
+                )
+        );
         return panel;
+    }
+
+    private JPanel buildPermanentSection(
+            String title,
+            List<SpectatorCardGroup> groups,
+            int category
+    ) {
+        JPanel section = new JPanel(new BorderLayout(3, 3));
+        section.setBorder(BorderFactory.createTitledBorder(title));
+
+        JPanel tiles = new JPanel(new GridLayout(0, 4, 4, 4));
+        int added = 0;
+        for (SpectatorCardGroup group : groups) {
+            if (!matchesCategory(group.card(), category)) {
+                continue;
+            }
+            tiles.add(buildCardTile(group));
+            added++;
+        }
+        if (added == 0) {
+            tiles.add(new JLabel("—", JLabel.CENTER));
+        }
+        section.add(tiles, BorderLayout.CENTER);
+        return section;
+    }
+
+    private JPanel buildCardTile(SpectatorCardGroup group) {
+        LiveGameState.CardState card = group.card();
+        JPanel tile = new JPanel(new BorderLayout(3, 3));
+        tile.setBorder(BorderFactory.createEtchedBorder());
+        tile.setPreferredSize(new Dimension(130, 74));
+
+        String count = group.count() > 1 ? " ×" + group.count() : "";
+        JLabel name = new JLabel(
+                "<html><center>"
+                        + escapeHtml(card.name())
+                        + count
+                        + "</center></html>",
+                JLabel.CENTER
+        );
+        name.setFont(name.getFont().deriveFont(Font.BOLD, 11f));
+        tile.add(name, BorderLayout.CENTER);
+
+        String details = cardDetail(card);
+        JLabel state = new JLabel(
+                "<html><center>" + escapeHtml(details) + "</center></html>",
+                JLabel.CENTER
+        );
+        state.setFont(state.getFont().deriveFont(10f));
+        tile.add(state, BorderLayout.SOUTH);
+        tile.setToolTipText(card.name() + " — " + details);
+        return tile;
+    }
+
+    private static boolean matchesCategory(
+            LiveGameState.CardState card,
+            int category
+    ) {
+        if (category == 0) {
+            return card.creature();
+        }
+        if (category == 1) {
+            return !card.creature() && card.land();
+        }
+        return !card.creature() && !card.land();
+    }
+
+    private static String cardDetail(LiveGameState.CardState card) {
+        StringBuilder out = new StringBuilder();
+        if (card.creature()) {
+            out.append(card.power()).append("/").append(card.toughness());
+        }
+        if (card.tapped()) {
+            appendDetail(out, "TAPPED");
+        }
+        if (card.attacking()) {
+            appendDetail(out, "ATTACK");
+        }
+        if (card.blocking()) {
+            appendDetail(out, "BLOCK");
+        }
+        if (card.token()) {
+            appendDetail(out, "TOKEN");
+        }
+        if (!card.counters().isEmpty()) {
+            appendDetail(out, String.join(", ", card.counters()));
+        }
+        return out.length() == 0 ? "ready" : out.toString();
+    }
+
+    private static void appendDetail(StringBuilder out, String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        if (out.length() > 0) {
+            out.append(" • ");
+        }
+        out.append(value);
+    }
+
+    private static String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 
     private static String zoneSummary(List<String> cards, int limit) {
