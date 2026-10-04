@@ -7,6 +7,8 @@ import com.housecommander.core.HousePackage;
 import com.housecommander.core.PodSpec;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.PilotDecision;
+import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
 
 import java.io.File;
@@ -15,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class HouseDesktopSmoke {
     private HouseDesktopSmoke() {}
@@ -31,6 +34,7 @@ public final class HouseDesktopSmoke {
 
         verifyDeckManagement(pack);
         verifySpectatorGrouping();
+        verifyPilotDecisionBridge();
 
         DesktopForgeBootstrap.ensureReady(System.out::println);
         if (!ForgeBridge.isAvailable()) {
@@ -90,6 +94,51 @@ public final class HouseDesktopSmoke {
                         + " event="
                         + live.lastEvent()
         );
+    }
+
+    private static void verifyPilotDecisionBridge() throws Exception {
+        PilotDecisionBridge.reset();
+        AtomicInteger result = new AtomicInteger(-99);
+
+        Thread requester = new Thread(
+                () -> result.set(
+                        PilotDecisionBridge.request(
+                                PilotDecision.Kind.ACTION,
+                                "Jace, Multiverse Architect",
+                                "Choose an action",
+                                List.of("Cast Jace", "Pass priority")
+                        )
+                ),
+                "HOUSE-Pilot-Decision-Smoke"
+        );
+        requester.start();
+
+        long deadline = System.currentTimeMillis() + 3000L;
+        PilotDecision pending = PilotDecisionBridge.current();
+        while (!pending.pending() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10L);
+            pending = PilotDecisionBridge.current();
+        }
+        if (!pending.pending()) {
+            throw new AssertionError("Pilot decision was never published");
+        }
+        if (!PilotDecisionBridge.submit(pending.id(), 0)) {
+            throw new AssertionError("Pilot decision submit was rejected");
+        }
+
+        requester.join(3000L);
+        if (requester.isAlive() || result.get() != 0) {
+            throw new AssertionError(
+                    "Pilot decision did not resolve selected option: "
+                            + result.get()
+            );
+        }
+        if (PilotDecisionBridge.hasPending()) {
+            throw new AssertionError("Pilot decision remained pending after submit");
+        }
+
+        PilotDecisionBridge.reset();
+        System.out.println("DESKTOP_PILOT_DECISION_PASS");
     }
 
     private static void verifySpectatorGrouping() {
