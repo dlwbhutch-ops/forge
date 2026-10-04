@@ -6,6 +6,7 @@ import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
+import com.housecommander.forgebridge.HouseCardImageService;
 import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
@@ -16,6 +17,7 @@ import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -31,21 +33,28 @@ import javax.swing.Timer;
 import javax.swing.WindowConstants;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
+import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.Image;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
+import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 
@@ -90,11 +99,12 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JPanel watchBoard = new JPanel(new GridLayout(2, 2, 8, 8));
     private final JTextArea watchStack = new JTextArea();
     private final JTextArea watchLog = new JTextArea();
+    private final Map<String, ImageIcon> cardThumbnailCache = new HashMap<>();
 
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.15");
+        super("HOUSE Commander Lab 0.16");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -127,7 +137,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.15 • Play vs AI • Unified HOUSE Lab"
+                "Desktop 0.16 • Real Card Visuals • Play vs AI"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
@@ -1064,7 +1074,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         LiveGameState.CardState card = group.card();
         JPanel tile = new JPanel(new BorderLayout(3, 3));
         tile.setBorder(BorderFactory.createEtchedBorder());
-        tile.setPreferredSize(new Dimension(130, 74));
+        tile.setPreferredSize(new Dimension(124, 172));
 
         String count = group.count() > 1 ? " ×" + group.count() : "";
         JLabel name = new JLabel(
@@ -1074,18 +1084,147 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                         + "</center></html>",
                 JLabel.CENTER
         );
-        name.setFont(name.getFont().deriveFont(Font.BOLD, 11f));
-        tile.add(name, BorderLayout.CENTER);
+        name.setFont(name.getFont().deriveFont(Font.BOLD, 10f));
+        tile.add(name, BorderLayout.NORTH);
+
+        ImageIcon icon = cardThumbnail(card);
+        JLabel picture;
+        if (icon == null) {
+            picture = new JLabel(
+                    "<html><center>"
+                            + escapeHtml(card.name())
+                            + "<br><small>art loading / unavailable</small>"
+                            + "</center></html>",
+                    JLabel.CENTER
+            );
+        } else {
+            picture = new JLabel(icon, JLabel.CENTER);
+        }
+        picture.setToolTipText("Click to enlarge " + card.name());
+        tile.add(picture, BorderLayout.CENTER);
 
         String details = cardDetail(card);
         JLabel state = new JLabel(
                 "<html><center>" + escapeHtml(details) + "</center></html>",
                 JLabel.CENTER
         );
-        state.setFont(state.getFont().deriveFont(10f));
+        state.setFont(state.getFont().deriveFont(9f));
         tile.add(state, BorderLayout.SOUTH);
+
+        MouseAdapter zoom = new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent event) {
+                showCardZoom(card);
+            }
+        };
+        tile.addMouseListener(zoom);
+        picture.addMouseListener(zoom);
+        name.addMouseListener(zoom);
+
         tile.setToolTipText(card.name() + " — " + details);
         return tile;
+    }
+
+    private ImageIcon cardThumbnail(LiveGameState.CardState card) {
+        if (card.imageKey().isEmpty()) {
+            return null;
+        }
+
+        String cacheKey = card.imageKey()
+                + "|thumb|"
+                + card.tapped();
+        ImageIcon cached = cardThumbnailCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        File file = HouseCardImageService.localFile(card.imageKey());
+        if (file == null) {
+            HouseCardImageService.request(
+                    card.imageKey(),
+                    card.imageFetchKey(),
+                    () -> SwingUtilities.invokeLater(() -> {
+                        cardThumbnailCache.remove(cacheKey);
+                        refreshWatch();
+                    })
+            );
+            return null;
+        }
+
+        try {
+            BufferedImage source = ImageIO.read(file);
+            if (source == null) {
+                return null;
+            }
+
+            int width = card.tapped() ? 112 : 84;
+            int height = card.tapped() ? 78 : 118;
+            Image scaled = source.getScaledInstance(
+                    width,
+                    height,
+                    Image.SCALE_SMOOTH
+            );
+            ImageIcon icon = new ImageIcon(scaled);
+
+            if (cardThumbnailCache.size() > 320) {
+                cardThumbnailCache.clear();
+            }
+            cardThumbnailCache.put(cacheKey, icon);
+            return icon;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void showCardZoom(LiveGameState.CardState card) {
+        File file = HouseCardImageService.localFile(card.imageKey());
+        if (file == null) {
+            HouseCardImageService.request(
+                    card.imageKey(),
+                    card.imageFetchKey(),
+                    () -> SwingUtilities.invokeLater(() -> showCardZoom(card))
+            );
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Fetching exact card art for " + card.name() + "…",
+                    "HOUSE Card Art",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
+
+        try {
+            BufferedImage source = ImageIO.read(file);
+            if (source == null) {
+                throw new IllegalStateException("Image could not be decoded");
+            }
+            Image zoomed = source.getScaledInstance(
+                    366,
+                    510,
+                    Image.SCALE_SMOOTH
+            );
+
+            JPanel panel = new JPanel(new BorderLayout(8, 8));
+            panel.add(new JLabel(new ImageIcon(zoomed), JLabel.CENTER), BorderLayout.CENTER);
+            JLabel detail = new JLabel(
+                    "<html><center>"
+                            + escapeHtml(card.name())
+                            + "<br>"
+                            + escapeHtml(cardDetail(card))
+                            + "</center></html>",
+                    JLabel.CENTER
+            );
+            panel.add(detail, BorderLayout.SOUTH);
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    panel,
+                    card.name(),
+                    JOptionPane.PLAIN_MESSAGE
+            );
+        } catch (Throwable error) {
+            showError("Could not open card art", error);
+        }
     }
 
     private static boolean matchesCategory(
