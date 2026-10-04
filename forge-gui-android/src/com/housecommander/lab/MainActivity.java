@@ -23,7 +23,6 @@ import android.widget.TextView;
 
 import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
-import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.FriendlyGameLog;
 import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
