@@ -297,6 +297,7 @@ public final class ForgeBridge {
         );
         final Game game = match.createGame();
         liveGameState = LiveGameState.starting();
+        SpectatorPlayback.reset(liveGameState);
         final long startedNs = System.nanoTime();
         final ProgressHeartbeat heartbeat = new ProgressHeartbeat(startedNs);
         final LiveStateRecorder liveRecorder = new LiveStateRecorder(game);
@@ -1091,6 +1092,7 @@ public final class ForgeBridge {
                         eventName
                 );
                 liveGameState = next;
+                SpectatorPlayback.record(next);
             } catch (Throwable ignored) {
                 if (force) {
                     liveGameState = new LiveGameState(
@@ -1104,6 +1106,7 @@ public final class ForgeBridge {
                             game != null && game.isGameOver(),
                             ""
                     );
+                    SpectatorPlayback.record(liveGameState);
                 }
             }
         }
