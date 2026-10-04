@@ -40,11 +40,6 @@ public final class HousePilotController extends PlayerControllerAi {
     }
 
     @Override
-    public boolean isAI() {
-        return false;
-    }
-
-    @Override
     public List<SpellAbility> chooseSpellAbilityToPlay() {
         List<SpellAbility> actions = legalActions();
         List<String> labels = new ArrayList<String>(actions.size() + 1);
@@ -153,7 +148,21 @@ public final class HousePilotController extends PlayerControllerAi {
     private String priorityPrompt() {
         String phase = String.valueOf(getGame().getPhaseHandler().getPhase());
         int turn = Math.max(0, getGame().getPhaseHandler().getTurn());
-        return "Turn " + turn + " • " + phase + " — choose an action";
+        StringBuilder hand = new StringBuilder();
+        for (Card card : getPlayer().getCardsIn(ZoneType.Hand)) {
+            if (hand.length() > 0) {
+                hand.append(", ");
+            }
+            hand.append(card.getName());
+        }
+        return "Turn "
+                + turn
+                + " • "
+                + phase
+                + " — choose an action\nHand ("
+                + getPlayer().getCardsIn(ZoneType.Hand).size()
+                + "): "
+                + (hand.length() == 0 ? "empty" : hand.toString());
     }
 
     private static String actionLabel(SpellAbility ability) {
