@@ -146,7 +146,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.13 • Live Battlefield • Unified HOUSE Lab\n"
+                "Bridge 0.14 • Selectable Watch Pods • Unified HOUSE Lab\n"
                         + installedVersion,
                 14,
                 false
@@ -704,7 +704,7 @@ public final class MainActivity extends Activity {
             watchStack.setText(stackText.toString());
         }
 
-        File testDir = new File(getFilesDir(), "logs/test");
+        File testDir = new File(getFilesDir(), "logs/watch");
         File log = newestLog(testDir);
         if (log == null) {
             return;
