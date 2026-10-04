@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.16 Real Card Battlefield
+HOUSE Commander Lab 0.16.1 Real Card Battlefield
 
 Requires Java 17 or newer.
 
@@ -61,3 +61,6 @@ the selected roster instead of reserving a fixed number of HOUSE seats.
 on demand and cached locally; gameplay remains fully functional offline when art
 is unavailable. Cards support click/tap zoom, tapped rotation, pile badges, and
 new/changed battlefield-entry animation while preserving token-safe grouping.
+
+0.16.1 follows transformed/modal double-faced cards to their current face and
+uses exact Scryfall token art when Forge has a collector-number mapping.
