@@ -40,6 +40,7 @@ import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -1142,7 +1143,6 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         if (file == null) {
             HouseCardImageService.request(
                     card.imageKey(),
-                    card.imageFetchKey(),
                     () -> SwingUtilities.invokeLater(() -> {
                         cardThumbnailCache.remove(cacheKey);
                         refreshWatch();
@@ -1157,9 +1157,12 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 return null;
             }
 
+            BufferedImage visual = card.tapped()
+                    ? rotateClockwise(source)
+                    : source;
             int width = card.tapped() ? 112 : 84;
             int height = card.tapped() ? 78 : 118;
-            Image scaled = source.getScaledInstance(
+            Image scaled = visual.getScaledInstance(
                     width,
                     height,
                     Image.SCALE_SMOOTH
@@ -1176,12 +1179,37 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
     }
 
+    private static BufferedImage rotateClockwise(
+            BufferedImage source
+    ) {
+        BufferedImage rotated = new BufferedImage(
+                source.getHeight(),
+                source.getWidth(),
+                BufferedImage.TYPE_INT_ARGB
+        );
+        Graphics2D graphics = rotated.createGraphics();
+        try {
+            graphics.translate(
+                    rotated.getWidth() / 2.0,
+                    rotated.getHeight() / 2.0
+            );
+            graphics.rotate(Math.PI / 2.0);
+            graphics.translate(
+                    -source.getWidth() / 2.0,
+                    -source.getHeight() / 2.0
+            );
+            graphics.drawImage(source, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+        return rotated;
+    }
+
     private void showCardZoom(LiveGameState.CardState card) {
         File file = HouseCardImageService.localFile(card.imageKey());
         if (file == null) {
             HouseCardImageService.request(
                     card.imageKey(),
-                    card.imageFetchKey(),
                     () -> SwingUtilities.invokeLater(() -> showCardZoom(card))
             );
             JOptionPane.showMessageDialog(
