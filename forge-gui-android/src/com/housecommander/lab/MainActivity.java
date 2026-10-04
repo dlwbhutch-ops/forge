@@ -18,6 +18,7 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
@@ -32,6 +33,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class MainActivity extends Activity {
@@ -285,11 +287,11 @@ public final class MainActivity extends Activity {
 
         root.addView(section("WATCH GAME"));
 
-        watchButton = button("Run & watch 1 literal Forge game");
+        watchButton = button("Choose 4 decks & watch literal Forge game");
         watchButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startTest();
+                showWatchPodPicker();
             }
         });
         root.addView(watchButton);
@@ -465,6 +467,126 @@ public final class MainActivity extends Activity {
                     "Run / resume 500 gauntlets (" + games500 + " games)"
             );
         }
+    }
+
+    private void showWatchPodPicker() {
+        try {
+            final HousePackage template = HouseRuntime.loadTemplatePackage(this);
+            final DeckLibraryStore store = new DeckLibraryStore(this);
+            final List<DeckSpec> library = store.allDecks(template);
+            final List<DeckSpec> activeRoster = store.loadRoster(template);
+
+            if (library.size() < 4) {
+                throw new IllegalStateException(
+                        "Deck Library needs at least four decks for a Commander watch pod"
+                );
+            }
+
+            final String[] labels = new String[library.size()];
+            final boolean[] checked = new boolean[library.size()];
+            int preselected = 0;
+
+            for (int i = 0; i < library.size(); i++) {
+                DeckSpec deck = library.get(i);
+                String commander = deck.commanders() == null
+                        ? ""
+                        : deck.commanders().trim();
+                labels[i] = commander.isEmpty()
+                        ? deck.deck()
+                        : deck.deck() + " — " + commander;
+
+                if (preselected < 4 && containsDeck(activeRoster, deck.deck())) {
+                    checked[i] = true;
+                    preselected++;
+                }
+            }
+
+            if (preselected < 4) {
+                for (int i = 0; i < checked.length && preselected < 4; i++) {
+                    if (!checked[i]) {
+                        checked[i] = true;
+                        preselected++;
+                    }
+                }
+            }
+
+            new AlertDialog.Builder(this)
+                    .setTitle("Choose exactly four decks to Watch")
+                    .setMultiChoiceItems(
+                            labels,
+                            checked,
+                            new android.content.DialogInterface.OnMultiChoiceClickListener() {
+                                @Override
+                                public void onClick(
+                                        android.content.DialogInterface dialog,
+                                        int which,
+                                        boolean isChecked
+                                ) {
+                                    checked[which] = isChecked;
+                                }
+                            }
+                    )
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton(
+                            "Run & Watch",
+                            new android.content.DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(
+                                        android.content.DialogInterface dialog,
+                                        int which
+                                ) {
+                                    List<String> selected = new ArrayList<String>();
+                                    for (int i = 0; i < checked.length; i++) {
+                                        if (checked[i]) {
+                                            selected.add(library.get(i).deck());
+                                        }
+                                    }
+                                    if (selected.size() != 4) {
+                                        new AlertDialog.Builder(MainActivity.this)
+                                                .setTitle("Watch Pod Needs Four Decks")
+                                                .setMessage(
+                                                        "Select exactly four decks. You selected "
+                                                                + selected.size()
+                                                                + "."
+                                                )
+                                                .setPositiveButton("OK", null)
+                                                .show();
+                                        return;
+                                    }
+                                    startWatchPod(selected);
+                                }
+                            }
+                    )
+                    .show();
+        } catch (Throwable t) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Watch Game unavailable")
+                    .setMessage(safeMessage(t))
+                    .setPositiveButton("OK", null)
+                    .show();
+        }
+    }
+
+    private static boolean containsDeck(List<DeckSpec> decks, String name) {
+        if (decks == null || name == null) {
+            return false;
+        }
+        for (DeckSpec deck : decks) {
+            if (deck != null && name.equals(deck.deck())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void startWatchPod(List<String> deckNames) {
+        Intent intent = new Intent(this, TournamentService.class)
+                .setAction(TournamentService.ACTION_WATCH)
+                .putExtra(
+                        TournamentService.EXTRA_WATCH_DECKS,
+                        deckNames.toArray(new String[0])
+                );
+        startServiceCompat(intent, true);
     }
 
     private void startTest() {
