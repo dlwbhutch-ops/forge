@@ -29,6 +29,7 @@ import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
 import com.housecommander.forgebridge.SpectatorPlayback;
+import com.housecommander.forgebridge.SpectatorTransition;
 import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
@@ -71,7 +72,11 @@ public final class MainActivity extends Activity {
     private TextView watchStatus;
     private LinearLayout watchBoard;
     private TextView watchStack;
+    private TextView watchEvents;
     private TextView watchDetails;
+    private final List<String> recentActionFeed = new ArrayList<String>();
+    private final Set<String> currentStackTargets = new HashSet<String>();
+    private LiveGameState transitionCursor = LiveGameState.idle();
     private DeckLibraryController libraryController;
     private AndroidCardArtCache cardArtCache;
     private final Set<String> seenVisualPiles = new HashSet<String>();
@@ -402,7 +407,16 @@ public final class MainActivity extends Activity {
         watchStack.setPadding(0, dp(6), 0, dp(8));
         root.addView(watchStack);
 
-        TextView logLabel = text("Forge event log", 12, true);
+        TextView actionLabel = text("Action feed", 12, true);
+        root.addView(actionLabel);
+
+        watchEvents = text("No visual transitions yet.", 11, false);
+        watchEvents.setTypeface(Typeface.MONOSPACE);
+        watchEvents.setTextIsSelectable(true);
+        watchEvents.setPadding(0, dp(4), 0, dp(8));
+        root.addView(watchEvents);
+
+        TextView logLabel = text("Detailed Forge log", 12, true);
         root.addView(logLabel);
 
         watchDetails = text(
@@ -743,6 +757,12 @@ public final class MainActivity extends Activity {
         RunState run = new StateStore(this).load();
         LiveGameState live = SpectatorPlayback.visibleState();
 
+        updateSpectatorTransitions(live);
+        currentStackTargets.clear();
+        for (LiveGameState.StackState stackItem : live.stackStates()) {
+            currentStackTargets.addAll(stackItem.targets());
+        }
+
         if (live.sequence() <= 1L) {
             seenVisualPiles.clear();
         }
@@ -784,16 +804,38 @@ public final class MainActivity extends Activity {
             }
         }
 
-        if (live.stack().isEmpty()) {
+        if (live.stackStates().isEmpty()) {
             watchStack.setText("STACK • empty");
         } else {
-            StringBuilder stackText = new StringBuilder("STACK\n");
+            StringBuilder stackText = new StringBuilder("STACK + TARGETS\n");
             int index = 1;
-            for (String item : live.stack()) {
-                stackText.append(index++).append(". ").append(item).append("\n");
+            for (LiveGameState.StackState item : live.stackStates()) {
+                stackText.append(index++).append(". ");
+                if (!item.activatingPlayer().isEmpty()) {
+                    stackText.append(item.activatingPlayer()).append(" • ");
+                }
+                if (!item.source().isEmpty()) {
+                    stackText.append(item.source());
+                } else {
+                    stackText.append(item.description());
+                }
+                if (!item.targets().isEmpty()) {
+                    stackText.append("  →  ").append(join(item.targets()));
+                }
+                stackText.append("\n");
             }
             watchStack.setText(stackText.toString());
         }
+
+        StringBuilder eventText = new StringBuilder();
+        for (String event : recentActionFeed) {
+            eventText.append(event).append("\n");
+        }
+        watchEvents.setText(
+                eventText.length() == 0
+                        ? "No visual transitions yet."
+                        : eventText.toString()
+        );
 
         File log;
         if ("PILOTING".equals(run.status)
@@ -993,6 +1035,12 @@ public final class MainActivity extends Activity {
         }
 
         String details = cardDetail(card);
+        boolean targeted = currentStackTargets.contains(card.name());
+        if (targeted) {
+            details = details + " • TARGET";
+            tile.setScaleX(1.04f);
+            tile.setScaleY(1.04f);
+        }
         TextView state = text(details, 10, false);
         state.setGravity(Gravity.CENTER);
         state.setPadding(0, dp(3), 0, 0);
@@ -1020,6 +1068,47 @@ public final class MainActivity extends Activity {
                     .start();
         }
         return tile;
+    }
+
+    private void updateSpectatorTransitions(LiveGameState visible) {
+        if (visible == null) {
+            return;
+        }
+        if (visible.sequence() <= 1L) {
+            transitionCursor = visible;
+            recentActionFeed.clear();
+            if (watchEvents != null) {
+                watchEvents.setText("No visual transitions yet.");
+            }
+            return;
+        }
+
+        List<LiveGameState> frames =
+                SpectatorPlayback.framesAfter(transitionCursor.sequence(), 160);
+        for (LiveGameState frame : frames) {
+            if (frame.sequence() > visible.sequence()) {
+                break;
+            }
+            if (transitionCursor.sequence() > 1L
+                    && frame.sequence() <= transitionCursor.sequence()) {
+                transitionCursor = frame;
+                recentActionFeed.clear();
+                continue;
+            }
+
+            List<SpectatorTransition.Transition> transitions =
+                    SpectatorTransition.diff(transitionCursor, frame);
+            for (SpectatorTransition.Transition transition : transitions) {
+                String line = "T" + frame.turn()
+                        + " " + frame.phase()
+                        + " • " + transition.displayText();
+                recentActionFeed.add(0, line);
+            }
+            while (recentActionFeed.size() > 80) {
+                recentActionFeed.remove(recentActionFeed.size() - 1);
+            }
+            transitionCursor = frame;
+        }
     }
 
     private void showCardZoom(LiveGameState.CardState card) {
