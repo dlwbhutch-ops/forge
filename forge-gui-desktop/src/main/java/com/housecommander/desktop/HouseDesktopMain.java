@@ -7,6 +7,8 @@ import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.PilotDecision;
+import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
 
 import javax.swing.BorderFactory;
@@ -79,7 +81,10 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JButton resetButton = new JButton("Reset Tournament");
     private final JButton folderButton = new JButton("Open HOUSE Data Folder");
     private final JButton watchButton = new JButton("Run & Watch 1 Literal Game");
-    private final JButton playButton = new JButton("Pilot a Deck vs AI");
+    private final JButton playButton = new JButton("Start Pilot Game vs 3 AI");
+    private final JLabel playStatus = new JLabel("Pilot mode ready");
+    private long shownPilotDecisionId = -1L;
+    private boolean pilotDialogOpen;
     private final JLabel watchStatus = new JLabel("Spectator board ready");
     private final JPanel watchBoard = new JPanel(new GridLayout(2, 2, 8, 8));
     private final JTextArea watchStack = new JTextArea();
@@ -88,7 +93,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.14");
+        super("HOUSE Commander Lab 0.15");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -121,7 +126,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.14 • Graphical Spectator Board • Unified HOUSE Lab"
+                "Desktop 0.15 • Play vs AI • Unified HOUSE Lab"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
@@ -246,10 +251,11 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         panel.setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
 
         JTextArea description = new JTextArea(
-                "Play mode lives inside HOUSE Commander Lab too. The next bridge step "
-                        + "will hand one Forge seat's decisions to you while the other "
-                        + "players remain AI-controlled. No second application or separate "
-                        + "deck database will be used."
+                "Choose one deck from the active HOUSE roster and pilot it against "
+                        + "three Forge AI opponents. HOUSE asks you to choose legal "
+                        + "priority actions and yes/no decisions; Forge still handles "
+                        + "mana sequencing and detailed target plumbing. Keep the Watch "
+                        + "tab open whenever you want the live battlefield."
         );
         description.setEditable(false);
         description.setLineWrap(true);
@@ -257,11 +263,22 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         description.setOpaque(false);
         panel.add(description, BorderLayout.NORTH);
 
-        playButton.setEnabled(false);
-        playButton.setToolTipText(
-                "Human decision callbacks are the next engine milestone."
+        JPanel controls = new JPanel(new BorderLayout(8, 8));
+        playStatus.setFont(playStatus.getFont().deriveFont(Font.BOLD));
+        controls.add(playStatus, BorderLayout.NORTH);
+        controls.add(playButton, BorderLayout.CENTER);
+        panel.add(controls, BorderLayout.CENTER);
+
+        JTextArea note = new JTextArea(
+                "0.15 Assisted Pilot: you choose what to cast/play/activate or when "
+                        + "to pass priority. Complex targeting and payment sub-decisions "
+                        + "remain Forge-assisted in this release."
         );
-        panel.add(playButton, BorderLayout.CENTER);
+        note.setEditable(false);
+        note.setLineWrap(true);
+        note.setWrapStyleWord(true);
+        note.setOpaque(false);
+        panel.add(note, BorderLayout.SOUTH);
         return panel;
     }
 
@@ -277,6 +294,42 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         pauseButton.addActionListener(event -> runner.requestPause());
         resetButton.addActionListener(event -> resetTournament());
         watchButton.addActionListener(event -> runner.runOneLiteralGame());
+        playButton.addActionListener(event -> startPilotGame());
+    }
+
+    private void startPilotGame() {
+        try {
+            HousePackage template = HouseDesktopRuntime.loadTemplatePackage();
+            List<DeckSpec> roster = libraryStore.loadRoster(template);
+            JList<DeckSpec> list = new JList<DeckSpec>(
+                    roster.toArray(new DeckSpec[0])
+            );
+            list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            list.setCellRenderer(new DeckRenderer(libraryStore));
+            if (!roster.isEmpty()) {
+                list.setSelectedIndex(0);
+            }
+
+            JScrollPane pane = new JScrollPane(list);
+            pane.setPreferredSize(new Dimension(620, 420));
+            int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    pane,
+                    "Choose Your Commander Deck",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.PLAIN_MESSAGE
+            );
+            if (choice != JOptionPane.OK_OPTION || list.getSelectedValue() == null) {
+                return;
+            }
+
+            DeckSpec pilot = list.getSelectedValue();
+            shownPilotDecisionId = -1L;
+            playStatus.setText("Starting " + pilot.deck() + " vs 3 Forge AI…");
+            runner.runPilotGame(pilot);
+        } catch (Throwable error) {
+            showError("Pilot game could not start", error);
+        }
     }
 
     private void importDeck() {
@@ -709,6 +762,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         refreshState();
         refreshResults();
         refreshWatch();
+        refreshPilotDecision();
     }
 
     private void refreshLibrary() {
@@ -756,7 +810,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
         boolean running = runner.isActive()
                 || "RUNNING".equals(state.status)
-                || "TESTING".equals(state.status);
+                || "TESTING".equals(state.status)
+                || "PILOTING".equals(state.status);
         importButton.setEnabled(!running);
         manageButton.setEnabled(!running);
         rosterButton.setEnabled(!running);
@@ -767,6 +822,50 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         pauseButton.setEnabled(running);
         resetButton.setEnabled(!running);
         watchButton.setEnabled(!running && ForgeBridge.isAvailable());
+        playButton.setEnabled(!running && ForgeBridge.isAvailable());
+        if ("PILOTING".equals(state.status) || "PILOT_COMPLETE".equals(state.status)) {
+            playStatus.setText(state.lastMessage);
+        } else if (!running) {
+            playStatus.setText("Pilot mode ready");
+        }
+    }
+
+    private void refreshPilotDecision() {
+        PilotDecision decision = PilotDecisionBridge.current();
+        if (!decision.pending()) {
+            return;
+        }
+        if (pilotDialogOpen || decision.id() == shownPilotDecisionId) {
+            return;
+        }
+
+        pilotDialogOpen = true;
+        shownPilotDecisionId = decision.id();
+        playStatus.setText(
+                decision.player() + " • " + decision.prompt()
+        );
+
+        try {
+            Object[] options = decision.options().toArray(new Object[0]);
+            int selected = JOptionPane.showOptionDialog(
+                    this,
+                    decision.prompt(),
+                    "HOUSE Pilot • " + decision.player(),
+                    JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.QUESTION_MESSAGE,
+                    null,
+                    options,
+                    options.length == 0 ? null : options[0]
+            );
+            if (selected < 0) {
+                selected = decision.kind() == PilotDecision.Kind.ACTION
+                        ? Math.max(0, options.length - 1)
+                        : Math.min(1, Math.max(0, options.length - 1));
+            }
+            PilotDecisionBridge.submit(decision.id(), selected);
+        } finally {
+            pilotDialogOpen = false;
+        }
     }
 
     private void refreshWatch() {
