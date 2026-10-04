@@ -994,11 +994,14 @@ public final class ForgeBridge {
             return "";
         }
         try {
+            String stateKey = card.getCurrentState() == null
+                    ? ""
+                    : safeText(card.getCurrentState().getImageKey());
+            if (!stateKey.isEmpty()) {
+                return stateKey;
+            }
             if (card.getPaperCard() != null) {
-                String key = card.getPaperCard().getCardImageKey();
-                if (key != null && !key.isEmpty()) {
-                    return key;
-                }
+                return safeText(card.getPaperCard().getImageKey(false));
             }
             return safeText(card.getImageKey());
         } catch (Throwable ignored) {
