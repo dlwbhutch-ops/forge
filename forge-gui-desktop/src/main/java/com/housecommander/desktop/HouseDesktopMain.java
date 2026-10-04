@@ -11,6 +11,7 @@ import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
 import com.housecommander.forgebridge.SpectatorPlayback;
+import com.housecommander.forgebridge.SpectatorTransition;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -104,7 +105,11 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JLabel watchStatus = new JLabel("Spectator board ready");
     private final JPanel watchBoard = new JPanel(new GridLayout(2, 2, 8, 8));
     private final JTextArea watchStack = new JTextArea();
+    private final JTextArea watchEvents = new JTextArea();
     private final JTextArea watchLog = new JTextArea();
+    private final List<String> recentActionFeed = new ArrayList<String>();
+    private final Set<String> currentStackTargets = new HashSet<String>();
+    private LiveGameState transitionCursor = LiveGameState.idle();
 
     private final Timer refreshTimer;
 
@@ -263,13 +268,19 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         watchStack.setWrapStyleWord(true);
         watchStack.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 
+        watchEvents.setEditable(false);
+        watchEvents.setLineWrap(true);
+        watchEvents.setWrapStyleWord(true);
+        watchEvents.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+
         watchLog.setEditable(false);
         watchLog.setLineWrap(false);
         watchLog.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 
         JTabbedPane diagnostics = new JTabbedPane();
-        diagnostics.addTab("Stack", new JScrollPane(watchStack));
-        diagnostics.addTab("Forge Log", new JScrollPane(watchLog));
+        diagnostics.addTab("Stack + Targets", new JScrollPane(watchStack));
+        diagnostics.addTab("Action Feed", new JScrollPane(watchEvents));
+        diagnostics.addTab("Detailed Forge Log", new JScrollPane(watchLog));
         diagnostics.setPreferredSize(new Dimension(900, 210));
         panel.add(diagnostics, BorderLayout.SOUTH);
         return panel;
@@ -962,6 +973,12 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         DesktopStateStore.State run = runner.state();
         LiveGameState live = SpectatorPlayback.visibleState();
 
+        updateSpectatorTransitions(live);
+        currentStackTargets.clear();
+        for (LiveGameState.StackState stackItem : live.stackStates()) {
+            currentStackTargets.addAll(stackItem.targets());
+        }
+
         if (live.sequence() <= 1L) {
             seenVisualPiles.clear();
         }
@@ -1007,17 +1024,40 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         watchBoard.revalidate();
         watchBoard.repaint();
 
-        if (live.stack().isEmpty()) {
+        if (live.stackStates().isEmpty()) {
             watchStack.setText("Stack empty");
         } else {
             StringBuilder stackText = new StringBuilder();
             int i = 1;
-            for (String item : live.stack()) {
-                stackText.append(i++).append(". ").append(item).append("\n");
+            for (LiveGameState.StackState item : live.stackStates()) {
+                stackText.append(i++).append(". ");
+                if (!item.activatingPlayer().isEmpty()) {
+                    stackText.append(item.activatingPlayer()).append(" • ");
+                }
+                if (!item.source().isEmpty()) {
+                    stackText.append(item.source());
+                } else {
+                    stackText.append(item.description());
+                }
+                if (!item.targets().isEmpty()) {
+                    stackText.append("  →  ").append(String.join(", ", item.targets()));
+                }
+                stackText.append("\n");
             }
             watchStack.setText(stackText.toString());
             watchStack.setCaretPosition(0);
         }
+
+        StringBuilder eventText = new StringBuilder();
+        for (String event : recentActionFeed) {
+            eventText.append(event).append("\n");
+        }
+        watchEvents.setText(
+                eventText.length() == 0
+                        ? "No visual transitions yet."
+                        : eventText.toString()
+        );
+        watchEvents.setCaretPosition(0);
 
         try {
             String logName = "PILOTING".equals(run.status)
@@ -1184,6 +1224,11 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         tile.add(face, BorderLayout.CENTER);
 
         String details = cardDetail(card);
+        boolean targeted = currentStackTargets.contains(card.name());
+        if (targeted) {
+            details = details + " • TARGET";
+            tile.setBorder(BorderFactory.createLineBorder(tile.getForeground(), 3));
+        }
         JLabel state = new JLabel(
                 "<html><center>" + escapeHtml(details) + "</center></html>",
                 JLabel.CENTER
@@ -1202,9 +1247,48 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 + "|"
                 + group.count();
         if (seenVisualPiles.add(visualKey)) {
-            pulseTile(tile);
+            pulseTile(tile, targeted);
         }
         return tile;
+    }
+
+    private void updateSpectatorTransitions(LiveGameState visible) {
+        if (visible == null) {
+            return;
+        }
+        if (visible.sequence() <= 1L) {
+            transitionCursor = visible;
+            recentActionFeed.clear();
+            watchEvents.setText("No visual transitions yet.");
+            return;
+        }
+
+        List<LiveGameState> frames =
+                SpectatorPlayback.framesAfter(transitionCursor.sequence(), 160);
+        for (LiveGameState frame : frames) {
+            if (frame.sequence() > visible.sequence()) {
+                break;
+            }
+            if (transitionCursor.sequence() > 1L
+                    && frame.sequence() <= transitionCursor.sequence()) {
+                transitionCursor = frame;
+                recentActionFeed.clear();
+                continue;
+            }
+
+            List<SpectatorTransition.Transition> transitions =
+                    SpectatorTransition.diff(transitionCursor, frame);
+            for (SpectatorTransition.Transition transition : transitions) {
+                String line = "T" + frame.turn()
+                        + " " + frame.phase()
+                        + " • " + transition.displayText();
+                recentActionFeed.add(0, line);
+            }
+            while (recentActionFeed.size() > 80) {
+                recentActionFeed.remove(recentActionFeed.size() - 1);
+            }
+            transitionCursor = frame;
+        }
     }
 
     private void showCardZoom(LiveGameState.CardState card) {
@@ -1238,10 +1322,12 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         );
     }
 
-    private static void pulseTile(JPanel tile) {
-        javax.swing.border.Border normal = BorderFactory.createEtchedBorder();
+    private static void pulseTile(JPanel tile, boolean targeted) {
+        javax.swing.border.Border normal = targeted
+                ? BorderFactory.createLineBorder(tile.getForeground(), 3)
+                : BorderFactory.createEtchedBorder();
         javax.swing.border.Border pulse =
-                BorderFactory.createLineBorder(tile.getForeground(), 2);
+                BorderFactory.createLineBorder(tile.getForeground(), targeted ? 5 : 2);
         final int[] step = {0};
         Timer timer = new Timer(90, event -> {
             step[0]++;
