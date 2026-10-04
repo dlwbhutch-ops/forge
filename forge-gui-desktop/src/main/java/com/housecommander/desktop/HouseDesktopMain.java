@@ -6,6 +6,7 @@ import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
+import com.housecommander.forgebridge.FriendlyGameLog;
 import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
@@ -104,12 +105,14 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final JLabel watchStatus = new JLabel("Spectator board ready");
     private final JPanel watchBoard = new JPanel(new GridLayout(2, 2, 8, 8));
     private final JTextArea watchStack = new JTextArea();
+    private final JTextArea watchFeed = new JTextArea();
+    private final JTextArea watchTurnSummary = new JTextArea();
     private final JTextArea watchLog = new JTextArea();
 
     private final Timer refreshTimer;
 
     public HouseDesktopMain() {
-        super("HOUSE Commander Lab 0.17");
+        super("HOUSE Commander Lab 0.18");
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 720));
         setPreferredSize(new Dimension(1180, 820));
@@ -263,14 +266,26 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         watchStack.setWrapStyleWord(true);
         watchStack.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 
+        watchFeed.setEditable(false);
+        watchFeed.setLineWrap(true);
+        watchFeed.setWrapStyleWord(true);
+        watchFeed.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+
+        watchTurnSummary.setEditable(false);
+        watchTurnSummary.setLineWrap(true);
+        watchTurnSummary.setWrapStyleWord(true);
+        watchTurnSummary.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+
         watchLog.setEditable(false);
         watchLog.setLineWrap(false);
         watchLog.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 
         JTabbedPane diagnostics = new JTabbedPane();
+        diagnostics.addTab("Game Feed", new JScrollPane(watchFeed));
+        diagnostics.addTab("Turn Summary", new JScrollPane(watchTurnSummary));
         diagnostics.addTab("Stack", new JScrollPane(watchStack));
-        diagnostics.addTab("Forge Log", new JScrollPane(watchLog));
-        diagnostics.setPreferredSize(new Dimension(900, 210));
+        diagnostics.addTab("Technical Log", new JScrollPane(watchLog));
+        diagnostics.setPreferredSize(new Dimension(900, 235));
         panel.add(diagnostics, BorderLayout.SOUTH);
         return panel;
     }
@@ -974,7 +989,6 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                             + (live.activePlayer().isEmpty()
                             ? ""
                             : " • active " + live.activePlayer())
-                            + " • " + live.lastEvent()
                             + " • viewer " + SpectatorPlayback.speed().label()
                             + (SpectatorPlayback.framesBehind() > 0
                             ? " • " + SpectatorPlayback.framesBehind() + " frames behind"
@@ -1018,6 +1032,21 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             watchStack.setText(stackText.toString());
             watchStack.setCaretPosition(0);
         }
+
+        String friendly = FriendlyGameLog.renderFeed(live.sequence(), 120);
+        String gameSummary = FriendlyGameLog.renderGameSummary(live.sequence());
+        if (!gameSummary.isEmpty()) {
+            friendly = friendly + "\n\n" + gameSummary;
+        }
+        watchFeed.setText(friendly);
+        watchFeed.setCaretPosition(watchFeed.getDocument().getLength());
+
+        String turnSummary = FriendlyGameLog.renderTurnSummary(live.sequence());
+        if (!gameSummary.isEmpty()) {
+            turnSummary = turnSummary + "\n\n" + gameSummary;
+        }
+        watchTurnSummary.setText(turnSummary);
+        watchTurnSummary.setCaretPosition(0);
 
         try {
             String logName = "PILOTING".equals(run.status)
