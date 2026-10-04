@@ -265,7 +265,7 @@
                 <packaging.type>apk</packaging.type>
                 <android.manifest.versionCodeUpdateFromVersion>false</android.manifest.versionCodeUpdateFromVersion>
                 <house.buildNumber>local</house.buildNumber>
-                <house.androidVersionCode>200007101</house.androidVersionCode>
+                <house.androidVersionCode>200017001</house.androidVersionCode>
             </properties>
             <build>
                 <plugins>
@@ -336,7 +336,7 @@
                                     <goal>manifest-merger</goal>
                                 </goals>
                                 <configuration>
-                                    <manifestVersionName>HOUSE-0.7.1-b${house.buildNumber}</manifestVersionName>
+                                    <manifestVersionName>HOUSE-0.17-b${house.buildNumber}</manifestVersionName>
                                     <manifestVersionCode>${house.androidVersionCode}</manifestVersionCode>
                                     <manifestVersionCodeUpdateFromVersion>false</manifestVersionCodeUpdateFromVersion>
                                 </configuration>
