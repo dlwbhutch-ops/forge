@@ -222,6 +222,7 @@ public final class LiveGameState {
     /** Read-only public permanent state for battlefield rendering. */
     public static final class CardState {
         private final String name;
+        private final String imageKey;
         private final boolean tapped;
         private final boolean token;
         private final boolean faceDown;
@@ -235,6 +236,7 @@ public final class LiveGameState {
 
         public CardState(
                 String name,
+                String imageKey,
                 boolean tapped,
                 boolean token,
                 boolean faceDown,
@@ -247,6 +249,7 @@ public final class LiveGameState {
                 List<String> counters
         ) {
             this.name = safe(name);
+            this.imageKey = safe(imageKey);
             this.tapped = tapped;
             this.token = token;
             this.faceDown = faceDown;
@@ -261,6 +264,10 @@ public final class LiveGameState {
 
         public String name() {
             return name;
+        }
+
+        public String imageKey() {
+            return imageKey;
         }
 
         public boolean tapped() {
