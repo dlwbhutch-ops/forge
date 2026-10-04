@@ -181,12 +181,12 @@ public final class DeckLibraryController {
             showError(
                     "Reset tournament first",
                     "The active roster is locked to the current checkpoint/results. "
-                            + "Reset the tournament before restoring the bundled HOUSE 19."
+                            + "Reset the tournament before restoring the bundled default roster."
             );
             return;
         }
         new AlertDialog.Builder(activity)
-                .setTitle("Restore bundled HOUSE 19?")
+                .setTitle("Restore bundled default roster?")
                 .setMessage("Imported decks stay in the Deck Library; only the active tournament roster changes.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Restore", new DialogInterface.OnClickListener() {
