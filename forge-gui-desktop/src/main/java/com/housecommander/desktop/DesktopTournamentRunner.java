@@ -121,6 +121,49 @@ public final class DesktopTournamentRunner {
         });
     }
 
+    public void runPilotGame(DeckSpec pilotDeck) {
+        if (active || pilotDeck == null) {
+            return;
+        }
+        active = true;
+        executor.execute(() -> {
+            try {
+                DesktopForgeBootstrap.ensureReady(this::emitEngine);
+                HousePackage pack = HouseDesktopRuntime.loadActivePackage();
+                List<DeckSpec> decks = pilotPod(pack, pilotDeck);
+
+                DesktopStateStore.State state = stateStore.load();
+                state.status = "PILOTING";
+                state.lastMessage = "Piloting " + pilotDeck.deck() + " vs 3 Forge AI";
+                stateStore.save(state);
+                emit(state);
+
+                File log = new File(HouseDesktopPaths.logsDir(), "desktop-pilot-game.log");
+                String winner = ForgeBridge.runCommanderGameWithPilot(
+                        deckPaths(decks),
+                        0,
+                        log.getAbsolutePath(),
+                        HARD_TIMEOUT_SECONDS,
+                        STALL_TIMEOUT_SECONDS
+                );
+                String displayWinner = validateWinner(decks, winner);
+
+                state = stateStore.load();
+                state.status = "PILOT_COMPLETE";
+                state.lastMessage = "Pilot game winner: "
+                        + displayWinner
+                        + " • "
+                        + ForgeBridge.version();
+                stateStore.save(state);
+                emit(state);
+            } catch (Throwable error) {
+                fail(error);
+            } finally {
+                active = false;
+            }
+        });
+    }
+
     public void runTournament(int requestedGauntlets) {
         if (active) {
             return;
@@ -365,6 +408,33 @@ public final class DesktopTournamentRunner {
         if (state.nextPodIndex < 0 || state.nextPodIndex > podCount) {
             throw new IllegalStateException("Invalid nextPodIndex: " + state.nextPodIndex);
         }
+    }
+
+    private static List<DeckSpec> pilotPod(
+            HousePackage pack,
+            DeckSpec pilotDeck
+    ) {
+        List<DeckSpec> decks = new ArrayList<DeckSpec>();
+        decks.add(pilotDeck);
+
+        String pilotName = Names.canonical(pilotDeck.deck());
+        for (DeckSpec deck : pack.decks()) {
+            if (decks.size() >= 4) {
+                break;
+            }
+            if (deck == null || Names.canonical(deck.deck()).equals(pilotName)) {
+                continue;
+            }
+            decks.add(deck);
+        }
+
+        if (decks.size() != 4) {
+            throw new IllegalStateException(
+                    "Pilot mode needs four distinct Commander decks; resolved "
+                            + decks.size()
+            );
+        }
+        return decks;
     }
 
     private static List<DeckSpec> resolvePod(HousePackage pack, PodSpec pod) {
