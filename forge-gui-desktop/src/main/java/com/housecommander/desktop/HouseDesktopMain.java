@@ -922,9 +922,13 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
 
         try {
+            String logName = "PILOTING".equals(run.status)
+                    || "PILOT_COMPLETE".equals(run.status)
+                    ? "desktop-pilot-game.log"
+                    : "desktop-test-game.log";
             File log = new File(
                     HouseDesktopPaths.logsDir(),
-                    "desktop-test-game.log"
+                    logName
             );
             if (!log.isFile()) {
                 return;
