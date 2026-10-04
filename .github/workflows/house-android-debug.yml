@@ -10,6 +10,7 @@ on:
       - 'house-watch-game-v013-*'
       - 'house-spectator-board-v014-*'
       - 'house-pilot-v015-*'
+      - 'house-card-visuals-v016-*'
   workflow_dispatch:
 
 jobs:
@@ -117,7 +118,7 @@ jobs:
       - name: Upload HOUSE APK
         uses: actions/upload-artifact@v4
         with:
-          name: HOUSE-Commander-Lab-Android
+          name: HOUSE-Commander-Lab-Android-0.16
           path: |
             forge-gui-android/target/*debugSigned*.apk
           if-no-files-found: error
