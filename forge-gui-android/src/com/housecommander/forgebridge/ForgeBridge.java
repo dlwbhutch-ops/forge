@@ -11,6 +11,8 @@ package com.housecommander.forgebridge;
 import com.google.common.collect.Multiset;
 import com.google.common.eventbus.Subscribe;
 
+import forge.StaticData;
+import forge.card.CardEdition;
 import forge.deck.Deck;
 import forge.game.Game;
 import forge.game.GameEndReason;
@@ -27,9 +29,12 @@ import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.player.Player;
 import forge.game.player.RegisteredPlayer;
 import forge.game.zone.ZoneType;
+import forge.item.IPaperCard;
 import forge.item.PaperCard;
+import forge.localinstance.properties.ForgeConstants;
 import forge.model.FModel;
 import forge.player.GamePlayerUtil;
+import forge.util.ImageUtil;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -890,6 +895,8 @@ public final class ForgeBridge {
                 boolean creature = card.isCreature();
                 battlefield.add(new LiveGameState.CardState(
                         displayName,
+                        safeText(card.getImageKey()),
+                        cardImageUrl(card),
                         card.isTapped(),
                         card.isToken(),
                         card.isFaceDown(),
@@ -949,6 +956,34 @@ public final class ForgeBridge {
                 game.isGameOver(),
                 winner
         );
+    }
+
+    private static String cardImageUrl(Card card) {
+        if (card == null || card.isFaceDown() || card.isToken()) {
+            return "";
+        }
+        try {
+            IPaperCard paper = card.getPaperCard();
+            if (!(paper instanceof PaperCard)) {
+                return "";
+            }
+            PaperCard cardPrint = (PaperCard) paper;
+            CardEdition edition =
+                    StaticData.instance().getEditions().get(cardPrint.getEdition());
+            if (edition == null) {
+                return "";
+            }
+            String relative = ImageUtil.getScryfallDownloadUrl(
+                    cardPrint,
+                    "front",
+                    edition.getScryfallCode(),
+                    edition.getCardsLangCode(),
+                    false
+            );
+            return ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD + relative;
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     private static List<String> commanderStatus(Player player) {
