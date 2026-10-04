@@ -13,6 +13,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -21,6 +22,7 @@ import android.widget.TextView;
 import com.housecommander.core.HousePackage;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.SpectatorCardGroup;
 import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
@@ -144,7 +146,7 @@ public final class MainActivity extends Activity {
             installedVersion = "unknown build";
         }
         TextView version = text(
-                "Bridge 0.13 • Live Battlefield • Unified HOUSE Lab\n"
+                "Bridge 0.14 • Graphical Spectator Board • Unified HOUSE Lab\n"
                         + installedVersion,
                 14,
                 false
@@ -620,6 +622,7 @@ public final class MainActivity extends Activity {
         );
         params.setMargins(0, dp(5), 0, dp(5));
         panel.setLayoutParams(params);
+        panel.setBackgroundResource(android.R.drawable.editbox_background);
 
         boolean active = player.name().equals(activePlayer);
         String status = player.lost() ? " • OUT" : (active ? " • ACTIVE" : "");
@@ -635,27 +638,27 @@ public final class MainActivity extends Activity {
         );
         panel.addView(header);
 
+        List<SpectatorCardGroup> groups =
+                SpectatorCardGroup.group(player.battlefield());
+
         TextView counts = text(
                 "Hand " + player.handCount()
                         + " • Library " + player.libraryCount()
-                        + " • Battlefield " + player.battlefield().size(),
+                        + " • Battlefield " + player.battlefield().size()
+                        + " • Piles " + groups.size(),
                 12,
                 false
         );
         counts.setAlpha(0.8f);
         panel.addView(counts);
 
-        TextView battlefield = text(
-                formatBattlefield(player.battlefield()),
-                12,
-                false
-        );
-        battlefield.setTypeface(Typeface.MONOSPACE);
-        battlefield.setPadding(0, dp(5), 0, dp(5));
-        panel.addView(battlefield);
+        panel.addView(buildPermanentRow("CREATURES", groups, 0));
+        panel.addView(buildPermanentRow("LANDS", groups, 1));
+        panel.addView(buildPermanentRow("OTHER", groups, 2));
 
         TextView zones = text(
-                "Command: " + zoneSummary(player.command(), 4)
+                "Commander: " + zoneSummary(player.commanders(), 3)
+                        + "\nCommand zone: " + zoneSummary(player.command(), 4)
                         + "\nGraveyard (" + player.graveyard().size() + "): "
                         + zoneSummary(player.graveyard(), 5)
                         + "\nExile (" + player.exile().size() + "): "
@@ -665,28 +668,130 @@ public final class MainActivity extends Activity {
         );
         zones.setTypeface(Typeface.MONOSPACE);
         zones.setAlpha(0.85f);
+        zones.setPadding(0, dp(6), 0, 0);
         panel.addView(zones);
 
         return panel;
     }
 
-    private static String formatBattlefield(List<LiveGameState.CardState> cards) {
-        if (cards == null || cards.isEmpty()) {
-            return "BATTLEFIELD • empty";
+    private View buildPermanentRow(
+            String title,
+            List<SpectatorCardGroup> groups,
+            int category
+    ) {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.setPadding(0, dp(7), 0, dp(2));
+
+        TextView label = text(title, 11, true);
+        label.setAlpha(0.75f);
+        section.addView(label);
+
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(true);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+        scroll.addView(row);
+
+        int added = 0;
+        for (SpectatorCardGroup group : groups) {
+            if (!matchesCategory(group.card(), category)) {
+                continue;
+            }
+            row.addView(buildCardTile(group));
+            added++;
         }
 
-        StringBuilder out = new StringBuilder("BATTLEFIELD\n");
-        for (LiveGameState.CardState card : cards) {
-            out.append(card.tapped() ? "↷ " : "• ")
-                    .append(card.name());
-            if (card.creature()) {
-                out.append("  ").append(card.power()).append("/")
-                        .append(card.toughness());
+        if (added == 0) {
+            TextView empty = text("—", 12, false);
+            empty.setPadding(dp(8), dp(10), dp(8), dp(10));
+            row.addView(empty);
+        }
+
+        section.addView(scroll);
+        return section;
+    }
+
+    private View buildCardTile(SpectatorCardGroup group) {
+        LiveGameState.CardState card = group.card();
+        String count = group.count() > 1 ? " ×" + group.count() : "";
+
+        StringBuilder value = new StringBuilder();
+        if (card.tapped()) {
+            value.append("↷ ");
+        }
+        value.append(card.name()).append(count).append("\n");
+
+        if (card.creature()) {
+            value.append(card.power()).append("/").append(card.toughness());
+        }
+        if (card.attacking()) {
+            appendDetail(value, "ATTACK");
+        }
+        if (card.blocking()) {
+            appendDetail(value, "BLOCK");
+        }
+        if (card.token()) {
+            appendDetail(value, "TOKEN");
+        }
+        if (!card.counters().isEmpty()) {
+            appendDetail(value, join(card.counters()));
+        }
+
+        TextView tile = text(value.toString().trim(), 11, true);
+        tile.setGravity(Gravity.CENTER);
+        tile.setMinWidth(dp(128));
+        tile.setMinHeight(dp(76));
+        tile.setPadding(dp(8), dp(6), dp(8), dp(6));
+        tile.setBackgroundResource(android.R.drawable.editbox_background);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                dp(148),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, 0, dp(5), 0);
+        tile.setLayoutParams(params);
+        return tile;
+    }
+
+    private static boolean matchesCategory(
+            LiveGameState.CardState card,
+            int category
+    ) {
+        if (category == 0) {
+            return card.creature();
+        }
+        if (category == 1) {
+            return !card.creature() && card.land();
+        }
+        return !card.creature() && !card.land();
+    }
+
+    private static void appendDetail(StringBuilder out, String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        if (out.length() > 0 && out.charAt(out.length() - 1) != '\n') {
+            out.append(" • ");
+        }
+        out.append(value);
+    }
+
+    private static String join(List<String> values) {
+        StringBuilder out = new StringBuilder();
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value == null || value.isEmpty()) {
+                continue;
             }
-            if (card.token()) {
-                out.append(" [token]");
+            if (out.length() > 0) {
+                out.append(", ");
             }
-            out.append("\n");
+            out.append(value);
         }
         return out.toString();
     }
