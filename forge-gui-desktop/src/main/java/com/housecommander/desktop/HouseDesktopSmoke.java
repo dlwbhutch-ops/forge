@@ -5,6 +5,7 @@ import com.housecommander.core.DeckSpec;
 import com.housecommander.core.DeckVersion;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.PodSpec;
+import com.housecommander.core.WatchPodSelection;
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
 
@@ -122,6 +123,43 @@ public final class HouseDesktopSmoke {
                             + forgeName
                             + " cards="
                             + snapshot.cardCount()
+            );
+
+            List<DeckSpec> library = store.allDecks(pack);
+            String[] watchNames = new String[]{
+                    imported.deck(),
+                    pack.decks().get(0).deck(),
+                    pack.decks().get(1).deck(),
+                    pack.decks().get(2).deck()
+            };
+            List<DeckSpec> watchPod = WatchPodSelection.selectByNames(
+                    library,
+                    watchNames
+            );
+            if (watchPod.size() != WatchPodSelection.POD_SIZE
+                    || !watchPod.get(0).deck().equals(imported.deck())) {
+                throw new AssertionError("Imported deck did not resolve into Watch pod");
+            }
+
+            boolean duplicateBlocked = false;
+            try {
+                WatchPodSelection.selectByNames(
+                        library,
+                        new String[]{
+                                imported.deck(),
+                                imported.deck(),
+                                pack.decks().get(1).deck(),
+                                pack.decks().get(2).deck()
+                        }
+                );
+            } catch (IllegalArgumentException expected) {
+                duplicateBlocked = true;
+            }
+            if (!duplicateBlocked) {
+                throw new AssertionError("Watch pod allowed the same deck twice");
+            }
+            System.out.println(
+                    "DESKTOP_WATCH_POD_SELECTION_PASS decks=" + watchPod.size()
             );
         } finally {
             store.removeImportedDeck(pack, imported);
