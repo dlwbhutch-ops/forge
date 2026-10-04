@@ -223,6 +223,7 @@ public final class LiveGameState {
     public static final class CardState {
         private final String name;
         private final String imageKey;
+        private final String imageFetchKey;
         private final boolean tapped;
         private final boolean token;
         private final boolean faceDown;
@@ -237,6 +238,7 @@ public final class LiveGameState {
         public CardState(
                 String name,
                 String imageKey,
+                String imageFetchKey,
                 boolean tapped,
                 boolean token,
                 boolean faceDown,
@@ -250,6 +252,7 @@ public final class LiveGameState {
         ) {
             this.name = safe(name);
             this.imageKey = safe(imageKey);
+            this.imageFetchKey = safe(imageFetchKey);
             this.tapped = tapped;
             this.token = token;
             this.faceDown = faceDown;
@@ -268,6 +271,10 @@ public final class LiveGameState {
 
         public String imageKey() {
             return imageKey;
+        }
+
+        public String imageFetchKey() {
+            return imageFetchKey;
         }
 
         public boolean tapped() {
