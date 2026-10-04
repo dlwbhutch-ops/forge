@@ -85,10 +85,12 @@ public final class DeckLibraryStore {
             }
         }
 
-        if (selected.size() != RosterBuilder.HOUSE_ROSTER_SIZE) {
+        if (selected.size() < RosterBuilder.MIN_ROSTER_SIZE) {
             throw new IOException(
-                    "Active HOUSE roster has " + selected.size() + " decks; expected "
-                            + RosterBuilder.HOUSE_ROSTER_SIZE
+                    "Active HOUSE roster has "
+                            + selected.size()
+                            + " decks; minimum is "
+                            + RosterBuilder.MIN_ROSTER_SIZE
             );
         }
         return selected;
@@ -344,7 +346,7 @@ public final class DeckLibraryStore {
         if (isActive(template, current)) {
             throw new IOException(
                     current.deck() + " is in the active tournament roster. "
-                            + "Select a different 19-deck roster before removing it."
+                            + "Select a different active roster before removing it."
             );
         }
 
