@@ -64,6 +64,7 @@ public final class SpectatorCardGroup {
     private static String key(LiveGameState.CardState card) {
         StringBuilder out = new StringBuilder();
         out.append(card.name()).append('\u001f')
+                .append(card.imageKey()).append('\u001f')
                 .append(card.tapped()).append('\u001f')
                 .append(card.token()).append('\u001f')
                 .append(card.faceDown()).append('\u001f')
