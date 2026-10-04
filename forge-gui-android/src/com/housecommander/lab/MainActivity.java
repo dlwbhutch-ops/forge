@@ -47,6 +47,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -1195,29 +1196,35 @@ public final class MainActivity extends Activity {
 
     private final class TargetOverlayView extends View {
         private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint flightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final List<FlightVisual> flights = new ArrayList<FlightVisual>();
 
         TargetOverlayView() {
             super(MainActivity.this);
             linePaint.setStyle(Paint.Style.STROKE);
             linePaint.setStrokeWidth(dp(2));
+            flightPaint.setStyle(Paint.Style.STROKE);
+            flightPaint.setStrokeWidth(dp(2));
+            flightPaint.setTextSize(dp(12));
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            if (currentStackStates == null
-                    || currentStackStates.isEmpty()
+            if (((currentStackStates == null || currentStackStates.isEmpty())
+                    && flights.isEmpty())
                     || watchBoard == null) {
                 return;
             }
 
-            linePaint.setColor(
-                    watchStatus == null
-                            ? 0xFF777777
-                            : watchStatus.getCurrentTextColor()
-            );
+            int visualColor = watchStatus == null
+                    ? 0xFF777777
+                    : watchStatus.getCurrentTextColor();
+            linePaint.setColor(visualColor);
+            flightPaint.setColor(visualColor);
 
-            for (LiveGameState.StackState stackItem : currentStackStates) {
+            if (currentStackStates != null) {
+                for (LiveGameState.StackState stackItem : currentStackStates) {
                 View source = findTaggedView(
                         watchBoard,
                         "house-card:" + stackItem.source()
@@ -1249,8 +1256,140 @@ public final class MainActivity extends Activity {
 
                     float[] from = centerInOverlay(source);
                     float[] to = centerInOverlay(target);
-                    drawArrow(canvas, from[0], from[1], to[0], to[1]);
+                        drawArrow(canvas, from[0], from[1], to[0], to[1]);
+                    }
                 }
+            }
+
+            drawFlights(canvas);
+        }
+
+        private void queueZoneFlight(SpectatorTransition.Transition transition) {
+            String zone = transitionZone(transition.kind());
+            if (zone.isEmpty()
+                    || transition.subject().isEmpty()
+                    || watchBoard == null) {
+                return;
+            }
+            View source = findTaggedView(
+                    watchBoard,
+                    "house-card:" + transition.subject()
+            );
+            if (source == null) {
+                return;
+            }
+            float[] start = centerInOverlay(source);
+            flights.add(
+                    new FlightVisual(
+                            start[0],
+                            start[1],
+                            transition.player(),
+                            transition.subject(),
+                            zone,
+                            System.currentTimeMillis()
+                    )
+            );
+            postInvalidateOnAnimation();
+        }
+
+        private void clearFlights() {
+            flights.clear();
+            invalidate();
+        }
+
+        private void drawFlights(Canvas canvas) {
+            if (flights.isEmpty()) {
+                return;
+            }
+
+            long now = System.currentTimeMillis();
+            Iterator<FlightVisual> iterator = flights.iterator();
+            while (iterator.hasNext()) {
+                FlightVisual flight = iterator.next();
+                long age = now - flight.startedAt;
+                if (age > 850L) {
+                    iterator.remove();
+                    continue;
+                }
+
+                View player = findTaggedView(
+                        watchBoard,
+                        "house-player:" + flight.player
+                );
+                if (player == null) {
+                    continue;
+                }
+
+                float[] destination = centerInOverlay(player);
+                destination[1] += Math.max(0f, player.getHeight() / 2f - dp(24));
+                float progress = Math.min(1f, age / 700f);
+                float x = flight.startX
+                        + (destination[0] - flight.startX) * progress;
+                float y = flight.startY
+                        + (destination[1] - flight.startY) * progress;
+
+                canvas.drawLine(
+                        flight.startX,
+                        flight.startY,
+                        x,
+                        y,
+                        flightPaint
+                );
+                canvas.drawRect(
+                        x - dp(20),
+                        y - dp(12),
+                        x + dp(20),
+                        y + dp(12),
+                        flightPaint
+                );
+                canvas.drawText(
+                        flight.card + " → " + flight.zone,
+                        x + dp(24),
+                        y + dp(4),
+                        flightPaint
+                );
+            }
+
+            if (!flights.isEmpty()) {
+                postInvalidateOnAnimation();
+            }
+        }
+
+        private String transitionZone(SpectatorTransition.Kind kind) {
+            if (kind == SpectatorTransition.Kind.GRAVEYARD_ADD) {
+                return "graveyard";
+            }
+            if (kind == SpectatorTransition.Kind.EXILE_ADD) {
+                return "exile";
+            }
+            if (kind == SpectatorTransition.Kind.COMMAND_ADD) {
+                return "command";
+            }
+            return "";
+        }
+
+        private final class FlightVisual {
+            private final float startX;
+            private final float startY;
+            private final String player;
+            private final String card;
+            private final String zone;
+            private final long startedAt;
+
+            private FlightVisual(
+                    float startX,
+                    float startY,
+                    String player,
+                    String card,
+                    String zone,
+                    long startedAt
+            ) {
+                this.startX = startX;
+                this.startY = startY;
+                this.player = player == null ? "" : player;
+                this.card = card == null ? "" : card;
+                this.zone = zone == null ? "" : zone;
+                this.startedAt = startedAt;
             }
         }
 
@@ -1331,6 +1470,9 @@ public final class MainActivity extends Activity {
         if (visible.sequence() <= 1L) {
             transitionCursor = visible;
             recentActionFeed.clear();
+            if (targetOverlay != null) {
+                targetOverlay.clearFlights();
+            }
             if (watchEvents != null) {
                 watchEvents.setText("No visual transitions yet.");
             }
@@ -1353,6 +1495,9 @@ public final class MainActivity extends Activity {
             List<SpectatorTransition.Transition> transitions =
                     SpectatorTransition.diff(transitionCursor, frame);
             for (SpectatorTransition.Transition transition : transitions) {
+                if (targetOverlay != null) {
+                    targetOverlay.queueZoneFlight(transition);
+                }
                 String line = "T" + frame.turn()
                         + " " + frame.phase()
                         + " • " + transition.displayText();

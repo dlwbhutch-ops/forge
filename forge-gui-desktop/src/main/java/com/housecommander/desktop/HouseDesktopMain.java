@@ -130,6 +130,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             new HashMap<String, String>();
     private List<LiveGameState.StackState> currentStackStates =
             Collections.emptyList();
+    private final List<FlightVisual> flightVisuals = new ArrayList<FlightVisual>();
+    private Timer flightTimer;
     private LiveGameState transitionCursor = LiveGameState.idle();
 
     private final Timer refreshTimer;
@@ -1350,8 +1352,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         public void paint(Graphics graphics, javax.swing.JComponent component) {
             super.paint(graphics, component);
             if (!(component instanceof JLayer<?>)
-                    || currentStackStates == null
-                    || currentStackStates.isEmpty()) {
+                    || ((currentStackStates == null || currentStackStates.isEmpty())
+                    && flightVisuals.isEmpty())) {
                 return;
             }
 
@@ -1370,12 +1372,13 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 g2.setStroke(new BasicStroke(2.2f));
                 g2.setColor(component.getForeground());
 
-                for (LiveGameState.StackState stackItem : currentStackStates) {
-                    Component source = findTaggedComponent(
-                            (Container) view,
-                            "house.cardName",
-                            stackItem.source()
-                    );
+                if (currentStackStates != null) {
+                    for (LiveGameState.StackState stackItem : currentStackStates) {
+                        Component source = findTaggedComponent(
+                                (Container) view,
+                                "house.cardName",
+                                stackItem.source()
+                        );
                     if (source == null) {
                         source = findTaggedComponent(
                                 (Container) view,
@@ -1415,11 +1418,56 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                                 target.getHeight() / 2,
                                 component
                         );
-                        drawArrow(g2, from.x, from.y, to.x, to.y);
+                            drawArrow(g2, from.x, from.y, to.x, to.y);
+                        }
                     }
                 }
+                drawFlights(g2, (Container) view, component);
             } finally {
                 g2.dispose();
+            }
+        }
+
+        private void drawFlights(
+                Graphics2D graphics,
+                Container view,
+                javax.swing.JComponent layer
+        ) {
+            long now = System.currentTimeMillis();
+            for (FlightVisual flight : flightVisuals) {
+                long age = now - flight.startedAt;
+                if (age < 0L || age > 850L) {
+                    continue;
+                }
+
+                Component player = findTaggedComponent(
+                        view,
+                        "house.playerName",
+                        flight.player
+                );
+                if (player == null) {
+                    continue;
+                }
+
+                Point destination = SwingUtilities.convertPoint(
+                        player,
+                        player.getWidth() / 2,
+                        Math.max(10, player.getHeight() - 24),
+                        layer
+                );
+                double progress = Math.min(1.0, age / 700.0);
+                int x = flight.start.x
+                        + (int) ((destination.x - flight.start.x) * progress);
+                int y = flight.start.y
+                        + (int) ((destination.y - flight.start.y) * progress);
+
+                graphics.drawLine(flight.start.x, flight.start.y, x, y);
+                graphics.drawRoundRect(x - 28, y - 11, 56, 22, 8, 8);
+                graphics.drawString(
+                        flight.card + " → " + flight.zone,
+                        x + 32,
+                        y + 4
+                );
             }
         }
 
@@ -1499,6 +1547,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         if (visible.sequence() <= 1L) {
             transitionCursor = visible;
             recentActionFeed.clear();
+            flightVisuals.clear();
             watchEvents.setText("No visual transitions yet.");
             return;
         }
@@ -1519,6 +1568,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             List<SpectatorTransition.Transition> transitions =
                     SpectatorTransition.diff(transitionCursor, frame);
             for (SpectatorTransition.Transition transition : transitions) {
+                queueZoneFlight(transition);
                 String line = "T" + frame.turn()
                         + " " + frame.phase()
                         + " • " + transition.displayText();
@@ -1528,6 +1578,93 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 recentActionFeed.remove(recentActionFeed.size() - 1);
             }
             transitionCursor = frame;
+        }
+    }
+
+    private void queueZoneFlight(SpectatorTransition.Transition transition) {
+        String zone = transitionZone(transition.kind());
+        if (zone.isEmpty()
+                || transition.subject().isEmpty()
+                || watchBoardLayer == null) {
+            return;
+        }
+
+        Component source = battlefieldLinkLayer.findTaggedComponent(
+                watchBoard,
+                "house.cardName",
+                transition.subject()
+        );
+        if (source == null) {
+            return;
+        }
+
+        Point start = SwingUtilities.convertPoint(
+                source,
+                source.getWidth() / 2,
+                source.getHeight() / 2,
+                watchBoardLayer
+        );
+        flightVisuals.add(
+                new FlightVisual(
+                        start,
+                        transition.player(),
+                        transition.subject(),
+                        zone,
+                        System.currentTimeMillis()
+                )
+        );
+        startFlightTimer();
+    }
+
+    private static String transitionZone(SpectatorTransition.Kind kind) {
+        if (kind == SpectatorTransition.Kind.GRAVEYARD_ADD) {
+            return "graveyard";
+        }
+        if (kind == SpectatorTransition.Kind.EXILE_ADD) {
+            return "exile";
+        }
+        if (kind == SpectatorTransition.Kind.COMMAND_ADD) {
+            return "command";
+        }
+        return "";
+    }
+
+    private void startFlightTimer() {
+        if (flightTimer != null && flightTimer.isRunning()) {
+            return;
+        }
+        flightTimer = new Timer(33, event -> {
+            long now = System.currentTimeMillis();
+            flightVisuals.removeIf(flight -> now - flight.startedAt > 850L);
+            if (watchBoardLayer != null) {
+                watchBoardLayer.repaint();
+            }
+            if (flightVisuals.isEmpty()) {
+                ((Timer) event.getSource()).stop();
+            }
+        });
+        flightTimer.start();
+    }
+
+    private static final class FlightVisual {
+        private final Point start;
+        private final String player;
+        private final String card;
+        private final String zone;
+        private final long startedAt;
+
+        private FlightVisual(
+                Point start,
+                String player,
+                String card,
+                String zone,
+                long startedAt
+        ) {
+            this.start = start;
+            this.player = player == null ? "" : player;
+            this.card = card == null ? "" : card;
+            this.zone = zone == null ? "" : zone;
+            this.startedAt = startedAt;
         }
     }
 
