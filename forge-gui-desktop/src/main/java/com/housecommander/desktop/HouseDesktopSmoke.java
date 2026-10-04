@@ -212,8 +212,7 @@ public final class HouseDesktopSmoke {
         for (int i = 0; i < 600; i++) {
             cards.add(new LiveGameState.CardState(
                     "Squirrel Token",
-                    "",
-                    "",
+                    "t:squirrel|TBLB|1",
                     false,
                     true,
                     false,
@@ -228,8 +227,7 @@ public final class HouseDesktopSmoke {
         }
         cards.add(new LiveGameState.CardState(
                 "Squirrel Token",
-                "",
-                "",
+                "t:squirrel|TBLB|1",
                 true,
                 true,
                 false,
@@ -251,6 +249,42 @@ public final class HouseDesktopSmoke {
                             + groups.size()
             );
         }
+        List<LiveGameState.CardState> printIdentity =
+                new ArrayList<LiveGameState.CardState>();
+        printIdentity.add(new LiveGameState.CardState(
+                "Sol Ring",
+                "c:Sol Ring|CMM|1",
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                Collections.emptyList()
+        ));
+        printIdentity.add(new LiveGameState.CardState(
+                "Sol Ring",
+                "c:Sol Ring|LTC|1",
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                Collections.emptyList()
+        ));
+        if (SpectatorCardGroup.group(printIdentity).size() != 2) {
+            throw new AssertionError(
+                    "Spectator grouping merged distinct print identities"
+            );
+        }
+
         System.out.println(
                 "DESKTOP_SPECTATOR_GROUPING_PASS "
                         + cards.size()
