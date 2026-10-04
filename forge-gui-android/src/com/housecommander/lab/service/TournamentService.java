@@ -16,6 +16,7 @@ import com.housecommander.core.HousePackage;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.core.Names;
 import com.housecommander.core.PodSpec;
+import com.housecommander.core.WatchPodSelection;
 import com.housecommander.lab.DeckLibraryStore;
 import com.housecommander.lab.HouseRuntime;
 import com.housecommander.lab.MainActivity;
@@ -192,15 +193,12 @@ public final class TournamentService extends Service {
         RunState state = store.load();
 
         try {
-            if (requestedDeckNames == null || requestedDeckNames.length != 4) {
-                throw new IllegalArgumentException(
-                        "Watch Game requires exactly four selected decks"
-                );
-            }
-
             HousePackage template = HouseRuntime.loadTemplatePackage(this);
             List<DeckSpec> library = new DeckLibraryStore(this).allDecks(template);
-            List<DeckSpec> decks = resolveSelectedDecks(library, requestedDeckNames);
+            List<DeckSpec> decks = WatchPodSelection.selectByNames(
+                    library,
+                    requestedDeckNames
+            );
 
             ForgeEngineAdapter engine = new ForgeEngineAdapter(this);
             if (!engine.isAvailable()) {
@@ -238,42 +236,6 @@ public final class TournamentService extends Service {
         } finally {
             finishWorker(startId);
         }
-    }
-
-    private List<DeckSpec> resolveSelectedDecks(
-            List<DeckSpec> library,
-            String[] names
-    ) {
-        List<DeckSpec> out = new ArrayList<DeckSpec>();
-        for (String name : names) {
-            DeckSpec match = null;
-            String key = Names.canonical(name);
-            for (DeckSpec deck : library) {
-                if (Names.canonical(deck.deck()).equals(key)) {
-                    match = deck;
-                    break;
-                }
-            }
-            if (match == null) {
-                throw new IllegalStateException(
-                        "Selected Watch deck is missing from the Deck Library: " + name
-                );
-            }
-            for (DeckSpec existing : out) {
-                if (Names.canonical(existing.deck()).equals(key)) {
-                    throw new IllegalArgumentException(
-                            "Watch Game cannot use the same deck twice: " + name
-                    );
-                }
-            }
-            out.add(match);
-        }
-        if (out.size() != 4) {
-            throw new IllegalStateException(
-                    "Watch Game resolved " + out.size() + " decks; expected 4"
-            );
-        }
-        return out;
     }
 
     private void runTournament(int startId, int requestedGauntlets) {
