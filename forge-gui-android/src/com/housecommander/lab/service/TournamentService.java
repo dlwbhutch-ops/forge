@@ -46,7 +46,9 @@ public final class TournamentService extends Service {
     public static final String ACTION_RUN = "com.housecommander.lab.RUN";
     public static final String ACTION_TEST = "com.housecommander.lab.TEST";
     public static final String ACTION_PAUSE = "com.housecommander.lab.PAUSE";
+    public static final String ACTION_PILOT = "com.housecommander.lab.PILOT";
     public static final String EXTRA_GAUNTLETS = "gauntlets";
+    public static final String EXTRA_PILOT_DECK = "pilot_deck";
 
     private static final int NOTIFICATION_ID = 1901;
     private static final String CHANNEL_ID = "house_tournament";
@@ -90,7 +92,9 @@ public final class TournamentService extends Service {
             return START_NOT_STICKY;
         }
 
-        if (!ACTION_TEST.equals(action) && !ACTION_RUN.equals(action)) {
+        if (!ACTION_TEST.equals(action)
+                && !ACTION_RUN.equals(action)
+                && !ACTION_PILOT.equals(action)) {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
@@ -113,8 +117,19 @@ public final class TournamentService extends Service {
                     runEngineTest(workerStartId);
                 }
             });
+        } else if (ACTION_PILOT.equals(action)) {
+            final String pilotDeck = intent.getStringExtra(EXTRA_PILOT_DECK);
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    runPilotGame(workerStartId, pilotDeck);
+                }
+            });
         } else {
-            final int gauntlets = Math.max(1, intent.getIntExtra(EXTRA_GAUNTLETS, 1));
+            final int gauntlets = Math.max(
+                    1,
+                    intent.getIntExtra(EXTRA_GAUNTLETS, 1)
+            );
             executor.execute(new Runnable() {
                 @Override
                 public void run() {
@@ -161,6 +176,59 @@ public final class TournamentService extends Service {
             state = store.load();
             state.status = "TEST_COMPLETE";
             state.lastMessage = "Test winner: " + winner + " • " + outcome.engineVersion();
+            store.save(state);
+            updateNotification(state.lastMessage);
+        } catch (Throwable t) {
+            state = store.load();
+            state.status = "BLOCKED";
+            state.lastMessage = safeMessage(t);
+            store.save(state);
+            updateNotification("Blocked: " + state.lastMessage);
+        } finally {
+            finishWorker(startId);
+        }
+    }
+
+    private void runPilotGame(int startId, String pilotDeckName) {
+        StateStore store = new StateStore(this);
+        RunState state = store.load();
+
+        try {
+            HousePackage pack = HouseRuntime.loadActivePackage(this);
+            List<DeckSpec> decks = pilotPod(pack, pilotDeckName);
+            DeckSpec pilot = decks.get(0);
+
+            ForgeEngineAdapter engine = new ForgeEngineAdapter(this);
+            if (!engine.isAvailable()) {
+                throw new IllegalStateException(engine.status());
+            }
+
+            state.status = "PILOTING";
+            state.lastMessage = "Piloting "
+                    + pilot.deck()
+                    + " vs 3 Forge AI";
+            store.save(state);
+            updateNotification(state.lastMessage);
+
+            File log = new File(
+                    getFilesDir(),
+                    "logs/pilot/pilot-game.log"
+            );
+            GameOutcome outcome = engine.runCommanderGameWithPilot(
+                    decks,
+                    0,
+                    log,
+                    HARD_TIMEOUT_SECONDS,
+                    STALL_TIMEOUT_SECONDS
+            );
+            String winner = validateWinner(decks, outcome.winner());
+
+            state = store.load();
+            state.status = "PILOT_COMPLETE";
+            state.lastMessage = "Pilot game winner: "
+                    + winner
+                    + " • "
+                    + outcome.engineVersion();
             store.save(state);
             updateNotification(state.lastMessage);
         } catch (Throwable t) {
@@ -452,6 +520,52 @@ public final class TournamentService extends Service {
         state.totalGames = 0L;
         state.lastMessage = "Starting HOUSE Commander Lab";
         return state;
+    }
+
+    private List<DeckSpec> pilotPod(
+            HousePackage pack,
+            String pilotDeckName
+    ) {
+        if (pilotDeckName == null || pilotDeckName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Pilot deck was not selected");
+        }
+
+        DeckSpec pilot = null;
+        String wanted = Names.canonical(pilotDeckName);
+        for (DeckSpec deck : pack.decks()) {
+            if (deck != null
+                    && Names.canonical(deck.deck()).equals(wanted)) {
+                pilot = deck;
+                break;
+            }
+        }
+        if (pilot == null) {
+            throw new IllegalStateException(
+                    "Pilot deck is not in the active HOUSE roster: "
+                            + pilotDeckName
+            );
+        }
+
+        List<DeckSpec> out = new ArrayList<>();
+        out.add(pilot);
+        for (DeckSpec deck : pack.decks()) {
+            if (out.size() >= 4) {
+                break;
+            }
+            if (deck == null
+                    || Names.canonical(deck.deck()).equals(wanted)) {
+                continue;
+            }
+            out.add(deck);
+        }
+
+        if (out.size() != 4) {
+            throw new IllegalStateException(
+                    "Pilot mode needs four distinct Commander decks; resolved "
+                            + out.size()
+            );
+        }
+        return out;
     }
 
     private List<DeckSpec> resolvePod(HousePackage pack, PodSpec pod) {
