@@ -25,6 +25,7 @@ public final class SpectatorTransition {
         PHASE,
         LIFE,
         POISON,
+        COMMANDER_DAMAGE,
         BATTLEFIELD_ENTER,
         BATTLEFIELD_LEAVE,
         GRAVEYARD_ADD,
@@ -85,6 +86,9 @@ public final class SpectatorTransition {
                     break;
                 case POISON:
                     out.append("poison ").append(detail);
+                    break;
+                case COMMANDER_DAMAGE:
+                    out.append(subject).append(" commander damage ").append(detail);
                     break;
                 case BATTLEFIELD_ENTER:
                     out.append(subject).append(" → battlefield");
@@ -199,6 +203,13 @@ public final class SpectatorTransition {
                 ));
             }
 
+            appendCommanderDamageTransitions(
+                    out,
+                    now.name(),
+                    old.commanderDamage(),
+                    now.commanderDamage()
+            );
+
             appendCountChanges(
                     out,
                     now.name(),
@@ -243,6 +254,44 @@ public final class SpectatorTransition {
             ));
         }
 
+        return out;
+    }
+
+    private static void appendCommanderDamageTransitions(
+            List<Transition> out,
+            String player,
+            List<LiveGameState.CommanderDamageState> before,
+            List<LiveGameState.CommanderDamageState> after
+    ) {
+        Map<String, Integer> oldDamage = commanderDamageMap(before);
+        Map<String, Integer> newDamage = commanderDamageMap(after);
+        for (Map.Entry<String, Integer> entry : newDamage.entrySet()) {
+            int prior = count(oldDamage, entry.getKey());
+            int current = entry.getValue();
+            if (current > prior) {
+                out.add(new Transition(
+                        Kind.COMMANDER_DAMAGE,
+                        player,
+                        entry.getKey(),
+                        "+" + (current - prior) + " → " + current + "/21"
+                ));
+            }
+        }
+    }
+
+    private static Map<String, Integer> commanderDamageMap(
+            List<LiveGameState.CommanderDamageState> values
+    ) {
+        Map<String, Integer> out = new LinkedHashMap<String, Integer>();
+        if (values == null) {
+            return out;
+        }
+        for (LiveGameState.CommanderDamageState value : values) {
+            if (value == null || value.commander().isEmpty()) {
+                continue;
+            }
+            out.put(value.commander(), value.damage());
+        }
         return out;
     }
 
