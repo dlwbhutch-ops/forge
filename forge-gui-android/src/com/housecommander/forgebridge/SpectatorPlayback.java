@@ -227,6 +227,33 @@ public final class SpectatorPlayback {
         }
     }
 
+    /**
+     * Returns buffered snapshots published after the supplied sequence.
+     * If the sequence belongs to a prior game (new game reset), the current
+     * timeline is returned from its first frame.
+     */
+    public static List<LiveGameState> framesAfter(long sequence, int maxFrames) {
+        synchronized (LOCK) {
+            if (FRAMES.isEmpty() || maxFrames <= 0) {
+                return new ArrayList<LiveGameState>();
+            }
+
+            int start = indexOfSequence(sequence);
+            if (start >= 0) {
+                start++;
+            } else {
+                start = 0;
+            }
+
+            int end = FRAMES.size();
+            if (end - start > maxFrames) {
+                start = end - maxFrames;
+            }
+
+            return new ArrayList<LiveGameState>(FRAMES.subList(start, end));
+        }
+    }
+
     private static LiveGameState nextFrameAfter(long sequence) {
         if (FRAMES.isEmpty()) {
             return visible;
