@@ -4,10 +4,12 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
+import android.graphics.Canvas;
 import android.util.LruCache;
 
 import com.housecommander.forgebridge.CardArtStore;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.token.TokenArtResolver;
 
 import java.io.File;
 import java.util.Set;
@@ -44,6 +46,7 @@ public final class AndroidCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
+        if (TokenArtResolver.useIllustration(card)) return tokenBitmap(card, maxWidth, maxHeight, card.tapped());
         if (card == null || card.imageUrl().isEmpty()) {
             return null;
         }
@@ -75,6 +78,7 @@ public final class AndroidCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
+        if (TokenArtResolver.useIllustration(card)) return tokenBitmap(card, maxWidth, maxHeight, false);
         if (card == null || card.imageUrl().isEmpty()) {
             return null;
         }
@@ -95,6 +99,19 @@ public final class AndroidCardArtCache {
         loader.shutdownNow();
         pending.clear();
         bitmaps.evictAll();
+    }
+
+    private Bitmap tokenBitmap(LiveGameState.CardState card,int width,int height,boolean tapped) {
+        String key="token|"+TokenArtResolver.identity(card)+"|"+tapped+"|"+width+"x"+height;
+        Bitmap ready=bitmaps.get(key);
+        if(ready!=null&&!ready.isRecycled())return ready;
+        Bitmap art=Bitmap.createBitmap(200,280,Bitmap.Config.ARGB_8888);
+        TokenArtResolver.paint(card,new AndroidTokenPainter(new Canvas(art)));
+        Bitmap display=tapped?rotate90(art):art;
+        Bitmap result=scaleInside(display,width,height);
+        if(display!=result)display.recycle();
+        if(art!=display&&art!=result)art.recycle();
+        bitmaps.put(key,result);return result;
     }
 
     private void request(

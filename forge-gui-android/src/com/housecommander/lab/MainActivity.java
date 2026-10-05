@@ -35,6 +35,9 @@ import com.housecommander.lab.service.TournamentService;
 import com.housecommander.lab.state.ResultsWriter;
 import com.housecommander.lab.state.RunState;
 import com.housecommander.lab.state.StateStore;
+import com.housecommander.spectator.BroadcastSettings;
+import com.housecommander.token.TokenArtResolver;
+import com.housecommander.token.TokenRegistryLoader;
 
 import java.io.File;
 import java.io.IOException;
@@ -78,6 +81,11 @@ public final class MainActivity extends Activity {
     private boolean technicalLogVisible;
     private DeckLibraryController libraryController;
     private AndroidCardArtCache cardArtCache;
+    private BroadcastSettings broadcastSettings = new BroadcastSettings();
+    private AndroidTournamentTable tournamentTable;
+    private AndroidTournamentTable fullScreenTable;
+    private android.app.Dialog fullScreenDialog;
+    private String viewerStartupError;
     private final Set<String> seenVisualPiles = new HashSet<String>();
     private long shownPilotDecisionId = -1L;
     private boolean pilotDialogOpen;
@@ -109,6 +117,11 @@ public final class MainActivity extends Activity {
         }
 
         cardArtCache = new AndroidCardArtCache(this);
+        try {
+            broadcastSettings = BroadcastSettings.load(new File(getFilesDir(), "broadcast.properties"));
+            TokenArtResolver.install(TokenRegistryLoader.load(AndroidAssets.from(this)));
+        } catch (IOException error) { viewerStartupError = error.getMessage(); }
+        TokenArtResolver.preferIllustrations(broadcastSettings.themedTokens);
 
         libraryController = new DeckLibraryController(this, new DeckLibraryController.Callback() {
             @Override
@@ -136,6 +149,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (fullScreenDialog != null) fullScreenDialog.dismiss();
         handler.removeCallbacks(refresh);
         if (cardArtCache != null) {
             cardArtCache.shutdown();
@@ -395,9 +409,19 @@ public final class MainActivity extends Activity {
         }));
         root.addView(playbackScroll);
 
+        LinearLayout viewerButtons = new LinearLayout(this);
+        viewerButtons.addView(playbackButton("Full table", v -> showFullTable()));
+        viewerButtons.addView(playbackButton("Viewer settings", v -> showBroadcastSettings()));
+        root.addView(viewerButtons);
+        if (viewerStartupError != null) root.addView(text("Viewer: " + viewerStartupError, 12, false));
+
         watchBoard = new LinearLayout(this);
         watchBoard.setOrientation(LinearLayout.VERTICAL);
         watchBoard.setPadding(0, dp(4), 0, dp(8));
+        tournamentTable = new AndroidTournamentTable(this, cardArtCache, broadcastSettings,
+                this::showCardZoom, this::showPlayerDetails);
+        watchBoard.addView(tournamentTable, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(620)));
         root.addView(watchBoard);
 
         watchStack = text("Stack empty", 12, false);
@@ -809,21 +833,8 @@ public final class MainActivity extends Activity {
             watchStatus.setText("Spectator board ready");
         }
 
-        watchBoard.removeAllViews();
-        if (live.players().isEmpty()) {
-            TextView waiting = text(
-                    "Run & watch a literal Forge game. The four-player battlefield "
-                            + "will appear here.",
-                    13,
-                    false
-            );
-            waiting.setPadding(0, dp(8), 0, dp(12));
-            watchBoard.addView(waiting);
-        } else {
-            for (LiveGameState.PlayerState player : live.players()) {
-                watchBoard.addView(buildPlayerBoard(player, live.activePlayer()));
-            }
-        }
+        tournamentTable.update(live);
+        if (fullScreenTable != null) fullScreenTable.update(live);
 
         if (live.stack().isEmpty()) {
             watchStack.setText("STACK • empty");
@@ -880,6 +891,59 @@ public final class MainActivity extends Activity {
         } catch (Throwable ignored) {
             // Forge can be writing this file during the refresh; retry next tick.
         }
+    }
+
+    private void showPlayerDetails(LiveGameState.PlayerState player) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(buildPlayerBoard(player, SpectatorPlayback.currentFrame().activePlayer()));
+        new AlertDialog.Builder(this).setTitle(player.name()).setView(scroll)
+                .setPositiveButton("Close", null).show();
+    }
+
+    private void showFullTable() {
+        if (fullScreenDialog != null && fullScreenDialog.isShowing()) return;
+        fullScreenDialog = new android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout controls = new LinearLayout(this);
+        controls.addView(playbackButton("Close", v -> fullScreenDialog.dismiss()));
+        controls.addView(playbackButton("Pause", v -> { SpectatorPlayback.pause(); refreshWatchView(); }));
+        controls.addView(playbackButton("Live", v -> { SpectatorPlayback.goLive(); refreshWatchView(); }));
+        controls.addView(playbackButton("Step", v -> { SpectatorPlayback.nextAction(); refreshWatchView(); }));
+        content.addView(controls);
+        fullScreenTable = new AndroidTournamentTable(this, cardArtCache, broadcastSettings,
+                this::showCardZoom, this::showPlayerDetails);
+        fullScreenTable.update(SpectatorPlayback.currentFrame());
+        content.addView(fullScreenTable, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        fullScreenDialog.setContentView(content);
+        fullScreenDialog.setOnDismissListener(dialog -> { fullScreenTable = null; fullScreenDialog = null; });
+        fullScreenDialog.show();
+        fullScreenDialog.getWindow().setLayout(android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                android.view.WindowManager.LayoutParams.MATCH_PARENT);
+    }
+
+    private void showBroadcastSettings() {
+        String[] labels = {"Spotlight priority and responses", "Show combat and target arrows",
+                "Animate eliminations and new cards", "Prefer original token illustrations"};
+        boolean[] values = {broadcastSettings.focusResponses, broadcastSettings.showArrows,
+                broadcastSettings.animate, broadcastSettings.themedTokens};
+        new AlertDialog.Builder(this).setTitle("Viewer settings · " + TokenArtResolver.catalogSize() + " tokens")
+                .setMultiChoiceItems(labels, values, (dialog, which, checked) -> values[which] = checked)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    broadcastSettings.focusResponses = values[0];
+                    broadcastSettings.showArrows = values[1];
+                    broadcastSettings.animate = values[2];
+                    broadcastSettings.themedTokens = values[3];
+                    TokenArtResolver.preferIllustrations(broadcastSettings.themedTokens);
+                    try { broadcastSettings.save(new File(getFilesDir(), "broadcast.properties")); }
+                    catch (IOException error) {
+                        new AlertDialog.Builder(this).setMessage("Could not save settings: " + error.getMessage())
+                                .setPositiveButton("Close", null).show();
+                    }
+                    refreshWatchView();
+                }).show();
     }
 
     private View buildPlayerBoard(
@@ -1064,7 +1128,7 @@ public final class MainActivity extends Activity {
                 + details
                 + "|"
                 + group.count();
-        if (seenVisualPiles.add(visualKey)) {
+        if (broadcastSettings.animate && seenVisualPiles.add(visualKey)) {
             tile.setAlpha(0f);
             tile.setTranslationY(dp(12));
             tile.animate()
@@ -1077,36 +1141,28 @@ public final class MainActivity extends Activity {
     }
 
     private void showCardZoom(LiveGameState.CardState card) {
-        Bitmap art = cardArtCache.zoomBitmap(
-                card,
-                dp(420),
-                dp(586),
-                () -> showCardZoom(card)
-        );
-        if (art == null || isFinishing()) {
-            return;
-        }
-
+        if (isFinishing()) return;
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(8), dp(8), dp(8), dp(8));
-
         ImageView image = new ImageView(this);
-        image.setAdjustViewBounds(true);
-        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        image.setImageBitmap(art);
-        content.addView(image);
-
-        TextView detail = text(cardDetail(card), 12, false);
-        detail.setGravity(Gravity.CENTER);
-        detail.setPadding(0, dp(6), 0, 0);
-        content.addView(detail);
-
-        new AlertDialog.Builder(this)
-                .setTitle(card.name())
-                .setView(content)
-                .setPositiveButton("Close", null)
-                .show();
+        image.setAdjustViewBounds(true); image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setContentDescription(card.name());
+        content.addView(image, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(350)));
+        TextView detail = text(card.typeLine() + "\n" + cardDetail(card) + "\n"
+                + (card.oracle().isEmpty() ? String.join(", ", card.keywords()) : card.oracle()), 12, false);
+        detail.setTextIsSelectable(true); content.addView(detail);
+        ScrollView scroll = new ScrollView(this); scroll.addView(content);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(card.name()).setView(scroll)
+                .setPositiveButton("Close", null).create();
+        Runnable update = () -> {
+            if (!dialog.isShowing() || isFinishing()) return;
+            Bitmap art = cardArtCache.zoomBitmap(card, dp(320), dp(450), null);
+            if (art != null) image.setImageBitmap(art);
+        };
+        Bitmap art = cardArtCache.zoomBitmap(card, dp(320), dp(450), update);
+        if (art != null) image.setImageBitmap(art);
+        dialog.show();
     }
 
     private static String cardDetail(LiveGameState.CardState card) {

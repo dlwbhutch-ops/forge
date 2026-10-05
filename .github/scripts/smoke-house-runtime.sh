@@ -15,15 +15,9 @@ with zipfile.ZipFile("forge-gui-android/assets/house-forge-runtime.zip") as z:
 PY
 mkdir -p house-smoke-classes
 javac -encoding UTF-8 -cp "$runtime_classpath" -d house-smoke-classes \
-  forge-gui-android/src/com/housecommander/forgebridge/HouseHeadlessGui.java \
-  forge-gui-android/src/com/housecommander/forgebridge/HouseForgeRuntime.java \
-  forge-gui-android/src/com/housecommander/forgebridge/ForgeDeckLoader.java \
-  forge-gui-android/src/com/housecommander/forgebridge/LiveGameState.java \
-  forge-gui-android/src/com/housecommander/forgebridge/PilotDecision.java \
-  forge-gui-android/src/com/housecommander/forgebridge/PilotDecisionBridge.java \
-  forge-gui-android/src/com/housecommander/forgebridge/HousePilotController.java \
-  forge-gui-android/src/com/housecommander/forgebridge/HousePilotLobbyPlayer.java \
-  forge-gui-android/src/com/housecommander/forgebridge/ForgeBridge.java \
+  $(find forge-gui-android/src/com/housecommander/core \
+         forge-gui-android/src/com/housecommander/forgebridge \
+         forge-gui-android/src/com/housecommander/spectator -name '*.java') \
   .github/scripts/HouseRuntimeSmoke.java
 timeout 360 java -Xmx512m -cp "house-smoke-classes:$runtime_classpath" \
   HouseRuntimeSmoke house-smoke-runtime forge-gui-android/assets/house19/forge_decks house-literal-smoke.log \

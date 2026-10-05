@@ -8,11 +8,12 @@
     "name": {"type":"string"},
     "types": {"type":"array","items":{"type":"string"}},
     "subtypes": {"type":"array","items":{"type":"string"}},
-    "power": {"type":"integer"},
-    "toughness": {"type":"integer"},
+    "power": {"type":"string"},
+    "toughness": {"type":"string"},
     "keywords": {"type":"array","items":{"type":"string"}},
     "colors": {"type":"array","items":{"type":"string"}},
     "artProfile": {"type":"string"},
-    "animationProfile": {"type":"string"}
+    "animationProfile": {"type":"string"},
+    "oracle": {"type":"string"}
   }
 }

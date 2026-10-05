@@ -126,6 +126,11 @@ public final class SpectatorPlayback {
         }
     }
 
+    /** Inspect the current viewer frame without consuming another playback tick. */
+    public static LiveGameState currentFrame() {
+        synchronized (LOCK) { return visible; }
+    }
+
     public static void setSpeed(Speed next) {
         if (next == null) {
             return;

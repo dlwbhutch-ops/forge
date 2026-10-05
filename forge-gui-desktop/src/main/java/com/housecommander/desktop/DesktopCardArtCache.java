@@ -2,6 +2,7 @@ package com.housecommander.desktop;
 
 import com.housecommander.forgebridge.CardArtStore;
 import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.token.TokenArtResolver;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
@@ -32,6 +33,7 @@ public final class DesktopCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
+        if (TokenArtResolver.useIllustration(card)) return tokenIcon(card, maxWidth, maxHeight, card.tapped());
         if (card == null || card.imageUrl().isEmpty()) {
             return null;
         }
@@ -63,6 +65,7 @@ public final class DesktopCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
+        if (TokenArtResolver.useIllustration(card)) return tokenIcon(card, maxWidth, maxHeight, false);
         if (card == null || card.imageUrl().isEmpty()) {
             return null;
         }
@@ -89,6 +92,22 @@ public final class DesktopCardArtCache {
     public void shutdown() {
         loader.shutdownNow();
         pending.clear();
+    }
+
+    private ImageIcon tokenIcon(LiveGameState.CardState card, int width, int height, boolean tapped) {
+        String key = "token|" + TokenArtResolver.identity(card) + "|" + tapped + "|" + width + "x" + height;
+        ImageIcon ready = icons.get(key);
+        if (ready != null) return ready;
+        BufferedImage art = new BufferedImage(200,280,BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = art.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            TokenArtResolver.paint(card,new DesktopTokenPainter(g));
+        } finally { g.dispose(); }
+        ImageIcon result = new ImageIcon(scaleInside(tapped ? rotate90(art) : art,width,height));
+        if (icons.size() > 2048) icons.clear();
+        icons.put(key,result);
+        return result;
     }
 
     private void request(
