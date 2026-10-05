@@ -8,6 +8,7 @@ package com.housecommander.forgebridge;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import com.housecommander.spectator.FocusState;
 
 /**
  * Immutable, UI-safe snapshot of a literal Forge game.
@@ -25,6 +26,9 @@ public final class LiveGameState {
     private final List<String> stack;
     private final boolean gameOver;
     private final String winner;
+    private final String priorityPlayer;
+    private final String respondingPlayer;
+    private final List<TargetLink> links;
 
     public LiveGameState(
             long sequence,
@@ -37,6 +41,14 @@ public final class LiveGameState {
             boolean gameOver,
             String winner
     ) {
+        this(sequence, lastEvent, turn, phase, activePlayer, players, stack,
+                gameOver, winner, "", "", Collections.emptyList());
+    }
+
+    public LiveGameState(long sequence, String lastEvent, int turn, String phase,
+            String activePlayer, List<PlayerState> players, List<String> stack,
+            boolean gameOver, String winner, String priorityPlayer,
+            String respondingPlayer, List<TargetLink> links) {
         this.sequence = sequence;
         this.lastEvent = safe(lastEvent);
         this.turn = turn;
@@ -46,6 +58,9 @@ public final class LiveGameState {
         this.stack = immutableStrings(stack);
         this.gameOver = gameOver;
         this.winner = safe(winner);
+        this.priorityPlayer = safe(priorityPlayer);
+        this.respondingPlayer = safe(respondingPlayer);
+        this.links = immutable(links);
     }
 
     public static LiveGameState idle() {
@@ -112,6 +127,40 @@ public final class LiveGameState {
         return winner;
     }
 
+    public String priorityPlayer() { return priorityPlayer; }
+    public String respondingPlayer() { return respondingPlayer; }
+    public List<TargetLink> links() { return links; }
+    public FocusState focusState() {
+        if (gameOver) return FocusState.GAME_END;
+        if (lastEvent.contains("PlayerLost")) return FocusState.ELIMINATION;
+        if (!stack.isEmpty()) return FocusState.STACK;
+        for (TargetLink link : links) {
+            if (link.kind != TargetLink.Kind.TARGET) return FocusState.COMBAT;
+        }
+        if (!priorityPlayer.isEmpty() && !priorityPlayer.equals(activePlayer)) {
+            return FocusState.PRIORITY;
+        }
+        return FocusState.ACTIVE_TURN;
+    }
+
+    /** Source/target identity comes from Forge, never from a card's display name. */
+    public static final class TargetLink {
+        public enum Kind { ATTACK, BLOCK, TARGET }
+        public final int sourceId;
+        public final int targetId;
+        public final String targetPlayer;
+        public final String label;
+        public final Kind kind;
+        public TargetLink(int sourceId, int targetId, String targetPlayer,
+                String label, Kind kind) {
+            this.sourceId = sourceId;
+            this.targetId = targetId;
+            this.targetPlayer = safe(targetPlayer);
+            this.label = safe(label);
+            this.kind = kind;
+        }
+    }
+
     private static <T> List<T> immutable(List<T> source) {
         if (source == null || source.isEmpty()) {
             return Collections.emptyList();
@@ -147,6 +196,7 @@ public final class LiveGameState {
         private final List<String> commanders;
         private final List<String> graveyard;
         private final List<String> exile;
+        private final List<String> commanderDamage;
 
         public PlayerState(
                 String name,
@@ -161,6 +211,14 @@ public final class LiveGameState {
                 List<String> graveyard,
                 List<String> exile
         ) {
+            this(name, life, poison, handCount, libraryCount, lost, battlefield,
+                    command, commanders, graveyard, exile, Collections.emptyList());
+        }
+
+        public PlayerState(String name, int life, int poison, int handCount,
+                int libraryCount, boolean lost, List<CardState> battlefield,
+                List<String> command, List<String> commanders, List<String> graveyard,
+                List<String> exile, List<String> commanderDamage) {
             this.name = safe(name);
             this.life = life;
             this.poison = poison;
@@ -172,6 +230,7 @@ public final class LiveGameState {
             this.commanders = immutableStrings(commanders);
             this.graveyard = immutableStrings(graveyard);
             this.exile = immutableStrings(exile);
+            this.commanderDamage = immutableStrings(commanderDamage);
         }
 
         public String name() {
@@ -217,6 +276,7 @@ public final class LiveGameState {
         public List<String> exile() {
             return exile;
         }
+        public List<String> commanderDamage() { return commanderDamage; }
     }
 
     /** Read-only public permanent state for battlefield rendering. */
@@ -234,6 +294,13 @@ public final class LiveGameState {
         private final int power;
         private final int toughness;
         private final List<String> counters;
+        private final int id;
+        private final int damage;
+        private final boolean deathtouchDamage;
+        private final String typeLine;
+        private final String colors;
+        private final List<String> keywords;
+        private final String oracle;
 
         public CardState(
                 String name,
@@ -250,6 +317,28 @@ public final class LiveGameState {
                 int toughness,
                 List<String> counters
         ) {
+            this(name, imageKey, imageUrl, tapped, token, faceDown, creature, land,
+                    attacking, blocking, power, toughness, counters, -1, 0, false,
+                    "", "", Collections.emptyList());
+        }
+
+        public CardState(String name, String imageKey, String imageUrl,
+                boolean tapped, boolean token, boolean faceDown, boolean creature,
+                boolean land, boolean attacking, boolean blocking, int power,
+                int toughness, List<String> counters, int id, int damage,
+                boolean deathtouchDamage, String typeLine, String colors,
+                List<String> keywords) {
+            this(name, imageKey, imageUrl, tapped, token, faceDown, creature, land,
+                    attacking, blocking, power, toughness, counters, id, damage,
+                    deathtouchDamage, typeLine, colors, keywords, "");
+        }
+
+        public CardState(String name, String imageKey, String imageUrl,
+                boolean tapped, boolean token, boolean faceDown, boolean creature,
+                boolean land, boolean attacking, boolean blocking, int power,
+                int toughness, List<String> counters, int id, int damage,
+                boolean deathtouchDamage, String typeLine, String colors,
+                List<String> keywords, String oracle) {
             this.name = safe(name);
             this.imageKey = safe(imageKey);
             this.imageUrl = safe(imageUrl);
@@ -263,6 +352,13 @@ public final class LiveGameState {
             this.power = power;
             this.toughness = toughness;
             this.counters = immutableStrings(counters);
+            this.id = id;
+            this.damage = damage;
+            this.deathtouchDamage = deathtouchDamage;
+            this.typeLine = safe(typeLine);
+            this.colors = safe(colors);
+            this.keywords = immutableStrings(keywords);
+            this.oracle = safe(oracle);
         }
 
         public String name() {
@@ -316,5 +412,12 @@ public final class LiveGameState {
         public List<String> counters() {
             return counters;
         }
+        public int id() { return id; }
+        public int damage() { return damage; }
+        public boolean deathtouchDamage() { return deathtouchDamage; }
+        public String typeLine() { return typeLine; }
+        public String colors() { return colors; }
+        public List<String> keywords() { return keywords; }
+        public String oracle() { return oracle; }
     }
 }

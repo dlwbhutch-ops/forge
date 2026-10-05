@@ -5,8 +5,10 @@ import io
 import os
 from pathlib import Path
 import zipfile
+import runpy
 
 root = Path(__file__).resolve().parents[2]
+runpy.run_path(str(root / ".github/scripts/build-house-token-registry.py"), run_name="__main__")
 res = root / "forge-gui/res"
 out = root / "forge-gui-android/assets"
 out.mkdir(parents=True, exist_ok=True)

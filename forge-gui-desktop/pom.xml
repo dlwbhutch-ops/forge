@@ -76,6 +76,8 @@
                             <sources>
                                 <source>${project.basedir}/../forge-gui-android/src/com/housecommander/core</source>
                                 <source>${project.basedir}/../forge-gui-android/src/com/housecommander/forgebridge</source>
+                                <source>${project.basedir}/../forge-gui-android/src/com/housecommander/spectator</source>
+                                <source>${project.basedir}/../forge-gui-android/src/com/housecommander/token</source>
                             </sources>
                         </configuration>
                     </execution>
@@ -313,6 +315,7 @@ try {
                 <filtering>false</filtering>
                 <includes>
                     <include>house19/**</include>
+                    <include>tokens/**</include>
                     <include>house-forge-runtime.id</include>
                     <include>house-forge-runtime.zip</include>
                 </includes>
@@ -321,6 +324,11 @@ try {
     </build>
 
     <dependencies>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.11.0</version>
+        </dependency>
         <dependency>
             <groupId>forge</groupId>
             <artifactId>forge-core</artifactId>

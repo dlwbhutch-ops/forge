@@ -865,6 +865,7 @@ public final class ForgeBridge {
         int turn = 0;
         String phase = "";
         String activePlayer = "";
+        String priorityPlayer = "";
         PhaseHandler phaseHandler = game.getPhaseHandler();
         if (phaseHandler != null) {
             turn = Math.max(0, phaseHandler.getTurn());
@@ -874,6 +875,8 @@ public final class ForgeBridge {
             if (active != null) {
                 activePlayer = safeText(active.getName());
             }
+            Player priority = phaseHandler.getPriorityPlayer();
+            if (priority != null) priorityPlayer = safeText(priority.getName());
         }
 
         Combat combat = game.getCombat();
@@ -896,7 +899,7 @@ public final class ForgeBridge {
                 boolean creature = card.isCreature();
                 battlefield.add(new LiveGameState.CardState(
                         displayName,
-                        safeText(card.getImageKey()),
+                        card.isFaceDown() ? "" : safeText(card.getImageKey()),
                         cardImageUrl(card),
                         card.isTapped(),
                         card.isToken(),
@@ -907,7 +910,14 @@ public final class ForgeBridge {
                         blockers.contains(card),
                         creature ? card.getNetPower() : 0,
                         creature ? card.getNetToughness() : 0,
-                        counterLabels(card)
+                        counterLabels(card),
+                        card.getId(),
+                        card.getDamage(),
+                        card.hasBeenDealtDeathtouchDamage(),
+                        card.isFaceDown() ? "" : String.valueOf(card.getType()),
+                        card.isFaceDown() ? "" : String.valueOf(card.getColor()),
+                        keywordLabels(card),
+                        card.isFaceDown() ? "" : card.getOracleText()
                 ));
             }
 
@@ -922,12 +932,56 @@ public final class ForgeBridge {
                     cardNames(player.getCardsIn(ZoneType.Command)),
                     commanderStatus(player),
                     cardNames(player.getCardsIn(ZoneType.Graveyard)),
-                    cardNames(player.getCardsIn(ZoneType.Exile))
+                    cardNames(player.getCardsIn(ZoneType.Exile)),
+                    commanderDamageLabels(player)
             ));
         }
 
         List<String> stack = new ArrayList<String>();
+        List<LiveGameState.TargetLink> links = new ArrayList<>();
+        String respondingPlayer = "";
+        if (combat != null) {
+            for (Card attacker : combat.getAttackers()) {
+                forge.game.GameEntity defender = combat.getDefenderByAttacker(attacker);
+                if (defender != null) {
+                    links.add(new LiveGameState.TargetLink(attacker.getId(),
+                            defender instanceof Card ? defender.getId() : -1,
+                            defender instanceof Player ? defender.getName() : "",
+                            "Attacks", LiveGameState.TargetLink.Kind.ATTACK));
+                }
+                for (Card blocker : combat.getBlockers(attacker)) {
+                    links.add(new LiveGameState.TargetLink(blocker.getId(),
+                            attacker.getId(), "", "Blocks", LiveGameState.TargetLink.Kind.BLOCK));
+                }
+            }
+        }
         for (SpellAbilityStackInstance instance : game.getStack()) {
+            if (instance != null) {
+                Player activator = instance.getActivatingPlayer();
+                if (respondingPlayer.isEmpty() && activator != null
+                        && !activator.getName().equals(activePlayer)) {
+                    respondingPlayer = safeText(activator.getName());
+                }
+                Card source = instance.getSourceCard();
+                if (source != null && instance.getSpellAbility() != null) {
+                    for (forge.game.spellability.TargetChoices choices
+                            : instance.getSpellAbility().getAllTargetChoices()) {
+                        for (forge.game.GameObject target : choices) {
+                            if (target instanceof Card) {
+                                links.add(new LiveGameState.TargetLink(source.getId(),
+                                        ((Card) target).getId(), "", source.isFaceDown()
+                                        ? "Face-down source" : source.getName(),
+                                        LiveGameState.TargetLink.Kind.TARGET));
+                            } else if (target instanceof Player) {
+                                links.add(new LiveGameState.TargetLink(source.getId(), -1,
+                                        ((Player) target).getName(), source.isFaceDown()
+                                        ? "Face-down source" : source.getName(),
+                                        LiveGameState.TargetLink.Kind.TARGET));
+                            }
+                        }
+                    }
+                }
+            }
             String description = instance == null
                     ? ""
                     : safeText(instance.getStackDescription());
@@ -955,12 +1009,34 @@ public final class ForgeBridge {
                 playerStates,
                 stack,
                 game.isGameOver(),
-                winner
+                winner,
+                priorityPlayer,
+                respondingPlayer,
+                links
         );
     }
 
+    private static List<String> keywordLabels(Card card) {
+        List<String> out = new ArrayList<>();
+        if (!card.isFaceDown()) {
+            for (forge.game.keyword.KeywordInterface keyword : card.getKeywords()) {
+                out.add(keyword.getOriginal());
+            }
+            Collections.sort(out);
+        }
+        return out;
+    }
+
+    private static List<String> commanderDamageLabels(Player player) {
+        List<String> out = new ArrayList<>();
+        for (java.util.Map.Entry<Card, Integer> entry : player.getCommanderDamage()) {
+            if (entry.getValue() > 0) out.add(entry.getKey().getName() + ": " + entry.getValue() + "/21");
+        }
+        return out;
+    }
+
     private static String cardImageUrl(Card card) {
-        if (card == null || card.isFaceDown() || card.isToken()) {
+        if (card == null || card.isFaceDown()) {
             return "";
         }
         try {
@@ -1068,6 +1144,8 @@ public final class ForgeBridge {
                     : event.getClass().getSimpleName();
             long now = System.nanoTime();
             boolean force = eventName.contains("Phase")
+                    || eventName.contains("Priority")
+                    || eventName.contains("PlayerLost")
                     || eventName.contains("Turn")
                     || eventName.contains("Lives")
                     || eventName.contains("Counters")

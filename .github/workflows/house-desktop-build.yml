@@ -14,6 +14,7 @@ on:
       - 'house-visuals-v016-*'
       - 'house-unified-release-v017-*'
       - 'house-unified-release-v018-*'
+      - 'house-broadcast-*'
   workflow_dispatch:
 
 jobs:
@@ -53,6 +54,9 @@ jobs:
           mvn -B -U \
             -pl forge-gui-desktop -am package \
             -Dmaven.test.skip=true
+
+      - name: Verify HOUSE broadcast viewer and token catalog
+        run: bash .github/scripts/test-house-broadcast.sh
 
       - name: Run desktop HOUSE smoke gate
         run: |

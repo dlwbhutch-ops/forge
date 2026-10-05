@@ -12,6 +12,10 @@ import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
 import com.housecommander.forgebridge.SpectatorCardGroup;
 import com.housecommander.forgebridge.SpectatorPlayback;
+import com.housecommander.spectator.BroadcastSettings;
+import com.housecommander.token.TokenArtResolver;
+import com.housecommander.token.TokenRegistryLoader;
+import javax.swing.JCheckBox;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -62,6 +66,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private final DesktopTournamentRunner runner = new DesktopTournamentRunner(this);
     private final DesktopCardArtCache cardArtCache = new DesktopCardArtCache();
     private final Set<String> seenVisualPiles = new HashSet<String>();
+    private BroadcastSettings broadcastSettings = new BroadcastSettings();
+    private DesktopTournamentTable tournamentTable;
 
     private final JLabel librarySummary = new JLabel("Loading Deck Library…");
     private final JLabel engineStatus = new JLabel("Forge engine: starting…");
@@ -118,12 +124,21 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         setPreferredSize(new Dimension(1180, 820));
         setLocationByPlatform(true);
 
+        try {
+            broadcastSettings = BroadcastSettings.load(new File(HouseDesktopPaths.home(), "broadcast.properties"));
+            TokenArtResolver.install(TokenRegistryLoader.load(new ClasspathAssets()));
+        } catch (java.io.IOException error) {
+            JOptionPane.showMessageDialog(this, error.getMessage(), "Viewer preferences", JOptionPane.WARNING_MESSAGE);
+        }
+        TokenArtResolver.preferIllustrations(broadcastSettings.themedTokens);
+
         setContentPane(buildUi());
         wireActions();
 
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent event) {
+                refreshTimer.stop();
                 runner.shutdown();
                 cardArtCache.shutdown();
                 dispose();
@@ -256,9 +271,16 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         playback.add(watchStepPhaseButton);
         playback.add(watchStepTurnButton);
         controls.add(playback, BorderLayout.CENTER);
+        JButton preferences = new JButton("Viewer settings");
+        preferences.addActionListener(event -> showBroadcastSettings());
+        controls.add(preferences, BorderLayout.SOUTH);
         panel.add(controls, BorderLayout.NORTH);
 
         watchBoard.setBorder(BorderFactory.createTitledBorder("Literal Forge Battlefield"));
+        watchBoard.setLayout(new BorderLayout());
+        tournamentTable = new DesktopTournamentTable(cardArtCache, broadcastSettings,
+                this::showCardZoom, this::showPlayerDetails);
+        watchBoard.add(tournamentTable, BorderLayout.CENTER);
         panel.add(watchBoard, BorderLayout.CENTER);
 
         watchStack.setEditable(false);
@@ -285,7 +307,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         diagnostics.addTab("Turn Summary", new JScrollPane(watchTurnSummary));
         diagnostics.addTab("Stack", new JScrollPane(watchStack));
         diagnostics.addTab("Technical Log", new JScrollPane(watchLog));
-        diagnostics.setPreferredSize(new Dimension(900, 235));
+        diagnostics.setPreferredSize(new Dimension(900, 150));
         panel.add(diagnostics, BorderLayout.SOUTH);
         return panel;
     }
@@ -1001,25 +1023,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             watchStatus.setText("Spectator board ready");
         }
 
-        watchBoard.removeAll();
-        if (live.players().isEmpty()) {
-            JPanel waiting = new JPanel(new BorderLayout());
-            waiting.add(
-                    new JLabel(
-                            "<html><center>Run & Watch a literal Forge game.<br>"
-                                    + "The four-player battlefield will appear here.</center></html>",
-                            JLabel.CENTER
-                    ),
-                    BorderLayout.CENTER
-            );
-            watchBoard.add(waiting);
-        } else {
-            for (LiveGameState.PlayerState player : live.players()) {
-                watchBoard.add(buildPlayerBoard(player, live.activePlayer()));
-            }
-        }
-        watchBoard.revalidate();
-        watchBoard.repaint();
+        tournamentTable.update(live);
 
         if (live.stack().isEmpty()) {
             watchStack.setText("Stack empty");
@@ -1071,6 +1075,35 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         } catch (Throwable ignored) {
             // Forge may be writing this diagnostics file; retry next refresh.
         }
+    }
+
+    private void showPlayerDetails(LiveGameState.PlayerState player) {
+        JScrollPane scroll = new JScrollPane(buildPlayerBoard(player,
+                SpectatorPlayback.currentFrame().activePlayer()));
+        scroll.setPreferredSize(new Dimension(780, 600));
+        JOptionPane.showMessageDialog(this, scroll, player.name(), JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private void showBroadcastSettings() {
+        JPanel panel = new JPanel(new GridLayout(0, 1, 6, 6));
+        JCheckBox focus = new JCheckBox("Spotlight priority and responses", broadcastSettings.focusResponses);
+        JCheckBox arrows = new JCheckBox("Show combat and target arrows", broadcastSettings.showArrows);
+        JCheckBox animations = new JCheckBox("Animate eliminations and new cards", broadcastSettings.animate);
+        JCheckBox tokens = new JCheckBox("Prefer original token illustrations", broadcastSettings.themedTokens);
+        panel.add(new JLabel(TokenArtResolver.catalogSize() + " bundled token definitions · four fixed seats"));
+        panel.add(focus); panel.add(arrows); panel.add(animations); panel.add(tokens);
+        if (JOptionPane.showConfirmDialog(this, panel, "Viewer settings", JOptionPane.OK_CANCEL_OPTION)
+                != JOptionPane.OK_OPTION) return;
+        broadcastSettings.focusResponses = focus.isSelected();
+        broadcastSettings.showArrows = arrows.isSelected();
+        broadcastSettings.animate = animations.isSelected();
+        broadcastSettings.themedTokens = tokens.isSelected();
+        TokenArtResolver.preferIllustrations(broadcastSettings.themedTokens);
+        try { broadcastSettings.save(new File(HouseDesktopPaths.home(), "broadcast.properties")); }
+        catch (java.io.IOException error) {
+            JOptionPane.showMessageDialog(this, "Could not save viewer settings: " + error.getMessage());
+        }
+        refreshWatch();
     }
 
     private JPanel buildPlayerBoard(
@@ -1230,41 +1263,31 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                 + details
                 + "|"
                 + group.count();
-        if (seenVisualPiles.add(visualKey)) {
+        if (broadcastSettings.animate && seenVisualPiles.add(visualKey)) {
             pulseTile(tile);
         }
         return tile;
     }
 
     private void showCardZoom(LiveGameState.CardState card) {
-        ImageIcon zoom = cardArtCache.zoomIcon(
-                card,
-                488,
-                680,
-                () -> showCardZoom(card)
-        );
-        if (zoom == null) {
-            return;
-        }
-
+        javax.swing.JDialog dialog = new javax.swing.JDialog(this, card.name(), false);
         JPanel content = new JPanel(new BorderLayout(8, 8));
-        content.add(new JLabel(zoom, JLabel.CENTER), BorderLayout.CENTER);
-        JLabel details = new JLabel(
-                "<html><center><b>"
-                        + escapeHtml(card.name())
-                        + "</b><br>"
-                        + escapeHtml(cardDetail(card))
-                        + "</center></html>",
-                JLabel.CENTER
-        );
-        content.add(details, BorderLayout.SOUTH);
-
-        JOptionPane.showMessageDialog(
-                this,
-                content,
-                card.name(),
-                JOptionPane.PLAIN_MESSAGE
-        );
+        JLabel face = new JLabel("Loading card art…", JLabel.CENTER);
+        face.setPreferredSize(new Dimension(350, 490));
+        Runnable update = () -> {
+            if (!dialog.isDisplayable()) return;
+            ImageIcon art = cardArtCache.zoomIcon(card, 350, 490, null);
+            if (art != null) { face.setIcon(art); face.setText(""); }
+        };
+        ImageIcon art = cardArtCache.zoomIcon(card, 350, 490, update);
+        if (art != null) { face.setIcon(art); face.setText(""); }
+        else if (card.imageUrl().isEmpty()) face.setText(card.name());
+        JTextArea rules = new JTextArea(card.typeLine() + "\n" + cardDetail(card)
+                + "\n" + (card.oracle().isEmpty() ? String.join(", ", card.keywords()) : card.oracle()));
+        rules.setEditable(false); rules.setLineWrap(true); rules.setWrapStyleWord(true); rules.setRows(6);
+        content.add(face, BorderLayout.CENTER);
+        content.add(new JScrollPane(rules), BorderLayout.SOUTH);
+        dialog.setContentPane(content); dialog.pack(); dialog.setLocationRelativeTo(this); dialog.setVisible(true);
     }
 
     private static void pulseTile(JPanel tile) {
