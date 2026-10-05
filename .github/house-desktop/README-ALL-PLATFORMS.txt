@@ -1,4 +1,4 @@
-HOUSE Commander Lab 0.17 Unified Distribution
+HOUSE Commander Lab 0.18 Unified Distribution
 
 ONE APP / ONE CODEBASE
 HOUSE Commander Lab uses the same Forge rules bridge, deck format, tournament
@@ -21,10 +21,12 @@ FEATURES INCLUDED
 - Versioned deck replacement/restore
 - Variable-size tournament rosters and persistent checkpoints
 - Results and gauntlet tracking
-- Live four-player Watch battlefield
+- Four-seat broadcast table with active-turn and response focus
 - Real exact-print card art with local on-demand cache
-- Card zoom, tapped rotation, pile badges, battlefield-entry animation
+- Card zoom, tapped rotation, pile badges, elimination animation
 - Token-safe battlefield grouping
+- Offline token illustrations covering all 839 bundled Forge definitions
+- Saved response-focus, arrow, animation, and token-art preferences
 - Assisted Play vs AI with one HOUSE-controlled seat and three Forge AI seats
 
 INSTALL
@@ -48,7 +50,7 @@ Linux:
 
 Android:
 1. Extract the unified release bundle if needed.
-2. Install HOUSE-Commander-Lab-0.17-Android.apk.
+2. Install HOUSE-Commander-Lab-0.18-Android.apk.
 3. Android may require permission to install an APK from the app used to open it.
 
 DATA
@@ -57,6 +59,10 @@ Desktop HOUSE data remains under the current user's home directory in:
 
 Existing deck-library, roster, result, checkpoint, and card-art-cache data are
 therefore reused when upgrading from earlier HOUSE desktop releases.
+
+Use Viewer settings to customize response focus, arrows, animation, and token
+illustrations. Preferences are saved in broadcast.properties in the app's data
+directory. That file can also be copied between Android and desktop.
 
 CARD ART / OFFLINE PLAY
 Card art is optional. HOUSE downloads exact-print images on demand and caches
@@ -68,6 +74,6 @@ RELEASE-MANIFEST.txt records the exact Git commit used for every package.
 SHA256SUMS.txt contains package checksums.
 
 iOS
-The repository retains an iOS compatibility audit, but 0.17 does not claim a
+The repository retains an iOS compatibility audit, but 0.18 does not claim a
 native installable iOS client. The supported installable targets in this release
 are Windows, macOS, Linux, and Android.
