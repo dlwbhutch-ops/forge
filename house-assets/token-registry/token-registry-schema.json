@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HOUSE Token Registry",
+  "type": "object",
+  "required": ["tokenId","name","types","artProfile"],
+  "properties": {
+    "tokenId": {"type":"string"},
+    "name": {"type":"string"},
+    "types": {"type":"array","items":{"type":"string"}},
+    "subtypes": {"type":"array","items":{"type":"string"}},
+    "power": {"type":"integer"},
+    "toughness": {"type":"integer"},
+    "keywords": {"type":"array","items":{"type":"string"}},
+    "colors": {"type":"array","items":{"type":"string"}},
+    "artProfile": {"type":"string"},
+    "animationProfile": {"type":"string"}
+  }
+}
