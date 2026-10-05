@@ -225,7 +225,13 @@ public final class HouseDesktopSmoke {
                 false,
                 3,
                 3,
-                Collections.emptyList()
+                Collections.emptyList(),
+                "Legendary Creature - Test",
+                "W",
+                42,
+                0,
+                3,
+                false
         );
         LiveGameState.CardState attacking = new LiveGameState.CardState(
                 "Test Commander",
@@ -240,7 +246,13 @@ public final class HouseDesktopSmoke {
                 false,
                 3,
                 3,
-                Collections.emptyList()
+                Collections.emptyList(),
+                "Legendary Creature - Test",
+                "W",
+                42,
+                3,
+                3,
+                false
         );
 
         LiveGameState.PlayerState beforePlayer = new LiveGameState.PlayerState(
@@ -304,8 +316,11 @@ public final class HouseDesktopSmoke {
                 ),
                 Collections.singletonList(
                         new LiveGameState.CombatLinkState(
+                                42,
                                 "Test Commander",
+                                84,
                                 "Player B",
+                                Collections.singletonList(77),
                                 Collections.singletonList("Test Blocker")
                         )
                 ),
@@ -317,22 +332,31 @@ public final class HouseDesktopSmoke {
                 SpectatorTransition.diff(before, after);
         boolean sawLife = false;
         boolean sawCommanderDamage = false;
+        boolean sawCardDamage = false;
         boolean sawAttack = false;
         boolean sawStack = false;
         for (SpectatorTransition.Transition transition : transitions) {
             sawLife |= transition.kind() == SpectatorTransition.Kind.LIFE;
             sawCommanderDamage |= transition.kind()
                     == SpectatorTransition.Kind.COMMANDER_DAMAGE;
+            sawCardDamage |= transition.kind()
+                    == SpectatorTransition.Kind.CARD_DAMAGE;
             sawAttack |= transition.kind() == SpectatorTransition.Kind.ATTACK;
             sawStack |= transition.kind() == SpectatorTransition.Kind.STACK_ADD;
         }
-        if (!sawLife || !sawCommanderDamage || !sawAttack || !sawStack) {
+        if (!sawLife
+                || !sawCommanderDamage
+                || !sawCardDamage
+                || !sawAttack
+                || !sawStack) {
             throw new AssertionError(
                     "Spectator transition diff missed expected events: "
                             + transitions.size()
             );
         }
         if (after.combatLinks().size() != 1
+                || after.combatLinks().get(0).attackerId() != 42
+                || after.combatLinks().get(0).blockerIds().get(0) != 77
                 || !"Test Blocker".equals(
                         after.combatLinks().get(0).blockers().get(0)
                 )) {

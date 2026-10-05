@@ -128,6 +128,8 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             new HashMap<String, String>();
     private final Map<String, String> currentSourceTargets =
             new HashMap<String, String>();
+    private final Map<Integer, JPanel> cardTilesById =
+            new HashMap<Integer, JPanel>();
     private List<LiveGameState.StackState> currentStackStates =
             Collections.emptyList();
     private List<LiveGameState.CombatLinkState> currentCombatLinks =
@@ -1048,6 +1050,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
 
         watchBoard.removeAll();
+        cardTilesById.clear();
         if (live.players().isEmpty()) {
             JPanel waiting = new JPanel(new BorderLayout());
             waiting.add(
@@ -1264,6 +1267,12 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         LiveGameState.CardState card = group.card();
         JPanel tile = new JPanel(new BorderLayout(3, 3));
         tile.putClientProperty("house.cardName", card.name());
+        tile.putClientProperty("house.cardId", card.cardId());
+        for (Integer cardId : group.cardIds()) {
+            if (cardId != null && cardId.intValue() > 0) {
+                cardTilesById.put(cardId, tile);
+            }
+        }
         tile.setBorder(BorderFactory.createEtchedBorder());
         tile.setPreferredSize(
                 card.tapped()
@@ -1458,11 +1467,16 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
             );
             try {
                 for (LiveGameState.CombatLinkState combatLink : currentCombatLinks) {
-                    Component attacker = findTaggedComponent(
-                            view,
-                            "house.cardName",
-                            combatLink.attacker()
-                    );
+                    Component attacker = combatLink.attackerId() > 0
+                            ? cardTilesById.get(combatLink.attackerId())
+                            : null;
+                    if (attacker == null) {
+                        attacker = findTaggedComponent(
+                                view,
+                                "house.cardName",
+                                combatLink.attacker()
+                        );
+                    }
                     if (attacker == null) {
                         continue;
                     }
@@ -1474,12 +1488,22 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                     );
 
                     if (!combatLink.blockers().isEmpty()) {
-                        for (String blockerName : combatLink.blockers()) {
-                            Component blocker = findTaggedComponent(
-                                    view,
-                                    "house.cardName",
-                                    blockerName
-                            );
+                        for (int i = 0; i < combatLink.blockers().size(); i++) {
+                            String blockerName = combatLink.blockers().get(i);
+                            Component blocker = null;
+                            if (i < combatLink.blockerIds().size()) {
+                                Integer blockerId = combatLink.blockerIds().get(i);
+                                if (blockerId != null && blockerId.intValue() > 0) {
+                                    blocker = cardTilesById.get(blockerId);
+                                }
+                            }
+                            if (blocker == null) {
+                                blocker = findTaggedComponent(
+                                        view,
+                                        "house.cardName",
+                                        blockerName
+                                );
+                            }
                             if (blocker == null || blocker == attacker) {
                                 continue;
                             }
@@ -1492,11 +1516,16 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
                             drawArrow(graphics, from.x, from.y, to.x, to.y);
                         }
                     } else if (!combatLink.defender().isEmpty()) {
-                        Component defender = findTaggedComponent(
-                                view,
-                                "house.playerName",
-                                combatLink.defender()
-                        );
+                        Component defender = combatLink.defenderId() > 0
+                                ? cardTilesById.get(combatLink.defenderId())
+                                : null;
+                        if (defender == null) {
+                            defender = findTaggedComponent(
+                                    view,
+                                    "house.playerName",
+                                    combatLink.defender()
+                            );
+                        }
                         if (defender != null && defender != attacker) {
                             Point to = SwingUtilities.convertPoint(
                                     defender,
@@ -1915,6 +1944,17 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         }
         if (card.token()) {
             appendDetail(out, "TOKEN");
+        }
+        if (card.damageMarked() > 0) {
+            StringBuilder damage = new StringBuilder("DMG ")
+                    .append(card.damageMarked());
+            if (card.lethalDamage() > 0) {
+                damage.append("/").append(card.lethalDamage());
+            }
+            if (card.hasLethalDamageMarked()) {
+                damage.append(" LETHAL");
+            }
+            appendDetail(out, damage.toString());
         }
         if (!card.counters().isEmpty()) {
             appendDetail(out, String.join(", ", card.counters()));

@@ -89,6 +89,8 @@ public final class MainActivity extends Activity {
             new HashMap<String, String>();
     private final Map<String, String> currentSourceTargets =
             new HashMap<String, String>();
+    private final Map<Integer, View> cardViewsById =
+            new HashMap<Integer, View>();
     private List<LiveGameState.StackState> currentStackStates =
             new ArrayList<LiveGameState.StackState>();
     private List<LiveGameState.CombatLinkState> currentCombatLinks =
@@ -839,6 +841,7 @@ public final class MainActivity extends Activity {
         }
 
         watchBoard.removeAllViews();
+        cardViewsById.clear();
         if (live.players().isEmpty()) {
             TextView waiting = text(
                     "Run & watch a literal Forge game. The four-player battlefield "
@@ -1102,6 +1105,11 @@ public final class MainActivity extends Activity {
         params.setMargins(0, 0, dp(6), 0);
         tile.setLayoutParams(params);
         tile.setTag("house-card:" + card.name());
+        for (Integer cardId : group.cardIds()) {
+            if (cardId != null && cardId.intValue() > 0) {
+                cardViewsById.put(cardId, tile);
+            }
+        }
 
         if (group.count() > 1) {
             TextView badge = text("×" + group.count(), 11, true);
@@ -1303,21 +1311,36 @@ public final class MainActivity extends Activity {
             }
 
             for (LiveGameState.CombatLinkState combatLink : currentCombatLinks) {
-                View attacker = findTaggedView(
-                        watchBoard,
-                        "house-card:" + combatLink.attacker()
-                );
+                View attacker = combatLink.attackerId() > 0
+                        ? cardViewsById.get(combatLink.attackerId())
+                        : null;
+                if (attacker == null) {
+                    attacker = findTaggedView(
+                            watchBoard,
+                            "house-card:" + combatLink.attacker()
+                    );
+                }
                 if (attacker == null) {
                     continue;
                 }
                 float[] from = centerInOverlay(attacker);
 
                 if (!combatLink.blockers().isEmpty()) {
-                    for (String blockerName : combatLink.blockers()) {
-                        View blocker = findTaggedView(
-                                watchBoard,
-                                "house-card:" + blockerName
-                        );
+                    for (int i = 0; i < combatLink.blockers().size(); i++) {
+                        String blockerName = combatLink.blockers().get(i);
+                        View blocker = null;
+                        if (i < combatLink.blockerIds().size()) {
+                            Integer blockerId = combatLink.blockerIds().get(i);
+                            if (blockerId != null && blockerId.intValue() > 0) {
+                                blocker = cardViewsById.get(blockerId);
+                            }
+                        }
+                        if (blocker == null) {
+                            blocker = findTaggedView(
+                                    watchBoard,
+                                    "house-card:" + blockerName
+                            );
+                        }
                         if (blocker == null || blocker == attacker) {
                             continue;
                         }
@@ -1332,10 +1355,15 @@ public final class MainActivity extends Activity {
                         );
                     }
                 } else if (!combatLink.defender().isEmpty()) {
-                    View defender = findTaggedView(
-                            watchBoard,
-                            "house-player:" + combatLink.defender()
-                    );
+                    View defender = combatLink.defenderId() > 0
+                            ? cardViewsById.get(combatLink.defenderId())
+                            : null;
+                    if (defender == null) {
+                        defender = findTaggedView(
+                                watchBoard,
+                                "house-player:" + combatLink.defender()
+                        );
+                    }
                     if (defender != null && defender != attacker) {
                         float[] to = centerInOverlay(defender);
                         to[1] -= Math.max(0f, defender.getHeight() / 2f - dp(18));
@@ -1741,6 +1769,17 @@ public final class MainActivity extends Activity {
         }
         if (card.token()) {
             appendDetail(out, "TOKEN");
+        }
+        if (card.damageMarked() > 0) {
+            StringBuilder damage = new StringBuilder("DMG ")
+                    .append(card.damageMarked());
+            if (card.lethalDamage() > 0) {
+                damage.append("/").append(card.lethalDamage());
+            }
+            if (card.hasLethalDamageMarked()) {
+                damage.append(" LETHAL");
+            }
+            appendDetail(out, damage.toString());
         }
         if (!card.counters().isEmpty()) {
             appendDetail(out, join(card.counters()));

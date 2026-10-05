@@ -26,6 +26,7 @@ public final class SpectatorTransition {
         LIFE,
         POISON,
         COMMANDER_DAMAGE,
+        CARD_DAMAGE,
         BATTLEFIELD_ENTER,
         BATTLEFIELD_LEAVE,
         GRAVEYARD_ADD,
@@ -89,6 +90,9 @@ public final class SpectatorTransition {
                     break;
                 case COMMANDER_DAMAGE:
                     out.append(subject).append(" commander damage ").append(detail);
+                    break;
+                case CARD_DAMAGE:
+                    out.append(subject).append(" damage ").append(detail);
                     break;
                 case BATTLEFIELD_ENTER:
                     out.append(subject).append(" → battlefield");
@@ -322,6 +326,35 @@ public final class SpectatorTransition {
             if (!old.blocking() && now.blocking()) {
                 out.add(new Transition(Kind.BLOCK, player, now.name(), ""));
             }
+            if (old.damageMarked() != now.damageMarked()
+                    || old.deathtouchDamage() != now.deathtouchDamage()) {
+                String detail;
+                if (now.damageMarked() <= 0) {
+                    detail = "cleared";
+                } else {
+                    int delta = now.damageMarked() - old.damageMarked();
+                    StringBuilder damageText = new StringBuilder();
+                    if (delta > 0) {
+                        damageText.append("+").append(delta).append(" → ");
+                    }
+                    damageText.append(now.damageMarked());
+                    if (now.lethalDamage() > 0) {
+                        damageText.append("/").append(now.lethalDamage());
+                    }
+                    if (now.hasLethalDamageMarked()) {
+                        damageText.append(" LETHAL");
+                    }
+                    detail = damageText.toString();
+                }
+                out.add(
+                        new Transition(
+                                Kind.CARD_DAMAGE,
+                                player,
+                                now.name(),
+                                detail
+                        )
+                );
+            }
         }
     }
 
@@ -470,6 +503,9 @@ public final class SpectatorTransition {
     private static String cardKey(LiveGameState.CardState card) {
         if (card == null) {
             return "";
+        }
+        if (card.cardId() > 0) {
+            return "id:" + card.cardId();
         }
         return card.name() + "|" + card.imageKey();
     }

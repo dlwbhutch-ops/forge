@@ -20,10 +20,16 @@ import java.util.Map;
 public final class SpectatorCardGroup {
     private final LiveGameState.CardState card;
     private final int count;
+    private final List<Integer> cardIds;
 
-    private SpectatorCardGroup(LiveGameState.CardState card, int count) {
+    private SpectatorCardGroup(
+            LiveGameState.CardState card,
+            int count,
+            List<Integer> cardIds
+    ) {
         this.card = card;
         this.count = count;
+        this.cardIds = cardIds;
     }
 
     public LiveGameState.CardState card() {
@@ -32,6 +38,10 @@ public final class SpectatorCardGroup {
 
     public int count() {
         return count;
+    }
+
+    public List<Integer> cardIds() {
+        return cardIds;
     }
 
     public static List<SpectatorCardGroup> group(
@@ -49,6 +59,9 @@ public final class SpectatorCardGroup {
                     grouped.put(key, new MutableGroup(card));
                 } else {
                     existing.count++;
+                    if (card.cardId() > 0) {
+                        existing.cardIds.add(card.cardId());
+                    }
                 }
             }
         }
@@ -56,7 +69,13 @@ public final class SpectatorCardGroup {
         List<SpectatorCardGroup> out =
                 new ArrayList<SpectatorCardGroup>(grouped.size());
         for (MutableGroup group : grouped.values()) {
-            out.add(new SpectatorCardGroup(group.card, group.count));
+            out.add(
+                    new SpectatorCardGroup(
+                            group.card,
+                            group.count,
+                            new ArrayList<Integer>(group.cardIds)
+                    )
+            );
         }
         return out;
     }
@@ -73,7 +92,10 @@ public final class SpectatorCardGroup {
                 .append(card.attacking()).append('\u001f')
                 .append(card.blocking()).append('\u001f')
                 .append(card.power()).append('\u001f')
-                .append(card.toughness());
+                .append(card.toughness()).append('\u001f')
+                .append(card.damageMarked()).append('\u001f')
+                .append(card.lethalDamage()).append('\u001f')
+                .append(card.deathtouchDamage());
         for (String counter : card.counters()) {
             out.append('\u001f').append(counter);
         }
@@ -82,10 +104,14 @@ public final class SpectatorCardGroup {
 
     private static final class MutableGroup {
         private final LiveGameState.CardState card;
+        private final List<Integer> cardIds = new ArrayList<Integer>();
         private int count = 1;
 
         private MutableGroup(LiveGameState.CardState card) {
             this.card = card;
+            if (card.cardId() > 0) {
+                cardIds.add(card.cardId());
+            }
         }
     }
 }

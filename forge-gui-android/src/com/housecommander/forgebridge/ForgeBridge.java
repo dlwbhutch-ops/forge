@@ -888,13 +888,17 @@ public final class ForgeBridge {
                 new ArrayList<LiveGameState.CombatLinkState>();
         if (combat != null) {
             for (Card attacker : combat.getAttackers()) {
+                List<Integer> blockerIds = new ArrayList<Integer>();
                 List<String> blockerNames = new ArrayList<String>();
                 for (Card blocker : combat.getBlockers(attacker)) {
+                    blockerIds.add(blocker.getId());
                     blockerNames.add(safeText(blocker.getName()));
                 }
+                int defenderId = 0;
                 String defenderName = "";
                 try {
                     if (combat.getDefenderByAttacker(attacker) != null) {
+                        defenderId = combat.getDefenderByAttacker(attacker).getId();
                         defenderName = safeText(
                                 combat.getDefenderByAttacker(attacker).getName()
                         );
@@ -904,8 +908,11 @@ public final class ForgeBridge {
                 }
                 combatLinks.add(
                         new LiveGameState.CombatLinkState(
+                                attacker.getId(),
                                 safeText(attacker.getName()),
+                                defenderId,
                                 defenderName,
+                                blockerIds,
                                 blockerNames
                         )
                 );
@@ -937,7 +944,11 @@ public final class ForgeBridge {
                         creature ? card.getNetToughness() : 0,
                         counterLabels(card),
                         safeText(String.valueOf(card.getType())),
-                        card.getColor() == null ? "C" : card.getColor().name()
+                        card.getColor() == null ? "C" : card.getColor().name(),
+                        card.getId(),
+                        creature ? card.getDamage() : 0,
+                        creature ? Math.max(0, card.getLethal()) : 0,
+                        creature && card.hasBeenDealtDeathtouchDamage()
                 ));
             }
 

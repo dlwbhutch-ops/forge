@@ -239,8 +239,11 @@ public final class LiveGameState {
 
     /** Exact attacker/defender/blocker assignment captured from Forge combat. */
     public static final class CombatLinkState {
+        private final int attackerId;
         private final String attacker;
+        private final int defenderId;
         private final String defender;
+        private final List<Integer> blockerIds;
         private final List<String> blockers;
 
         public CombatLinkState(
@@ -248,17 +251,50 @@ public final class LiveGameState {
                 String defender,
                 List<String> blockers
         ) {
+            this(
+                    0,
+                    attacker,
+                    0,
+                    defender,
+                    Collections.emptyList(),
+                    blockers
+            );
+        }
+
+        public CombatLinkState(
+                int attackerId,
+                String attacker,
+                int defenderId,
+                String defender,
+                List<Integer> blockerIds,
+                List<String> blockers
+        ) {
+            this.attackerId = attackerId;
             this.attacker = safe(attacker);
+            this.defenderId = defenderId;
             this.defender = safe(defender);
+            this.blockerIds = immutable(blockerIds);
             this.blockers = immutableStrings(blockers);
+        }
+
+        public int attackerId() {
+            return attackerId;
         }
 
         public String attacker() {
             return attacker;
         }
 
+        public int defenderId() {
+            return defenderId;
+        }
+
         public String defender() {
             return defender;
+        }
+
+        public List<Integer> blockerIds() {
+            return blockerIds;
         }
 
         public List<String> blockers() {
@@ -423,6 +459,10 @@ public final class LiveGameState {
         private final List<String> counters;
         private final String typeLine;
         private final String colorKey;
+        private final int cardId;
+        private final int damageMarked;
+        private final int lethalDamage;
+        private final boolean deathtouchDamage;
 
         public CardState(
                 String name,
@@ -454,7 +494,11 @@ public final class LiveGameState {
                     toughness,
                     counters,
                     "",
-                    ""
+                    "",
+                    0,
+                    0,
+                    0,
+                    false
             );
         }
 
@@ -475,6 +519,50 @@ public final class LiveGameState {
                 String typeLine,
                 String colorKey
         ) {
+            this(
+                    name,
+                    imageKey,
+                    imageUrl,
+                    tapped,
+                    token,
+                    faceDown,
+                    creature,
+                    land,
+                    attacking,
+                    blocking,
+                    power,
+                    toughness,
+                    counters,
+                    typeLine,
+                    colorKey,
+                    0,
+                    0,
+                    0,
+                    false
+            );
+        }
+
+        public CardState(
+                String name,
+                String imageKey,
+                String imageUrl,
+                boolean tapped,
+                boolean token,
+                boolean faceDown,
+                boolean creature,
+                boolean land,
+                boolean attacking,
+                boolean blocking,
+                int power,
+                int toughness,
+                List<String> counters,
+                String typeLine,
+                String colorKey,
+                int cardId,
+                int damageMarked,
+                int lethalDamage,
+                boolean deathtouchDamage
+        ) {
             this.name = safe(name);
             this.imageKey = safe(imageKey);
             this.imageUrl = safe(imageUrl);
@@ -490,6 +578,10 @@ public final class LiveGameState {
             this.counters = immutableStrings(counters);
             this.typeLine = safe(typeLine);
             this.colorKey = safe(colorKey);
+            this.cardId = cardId;
+            this.damageMarked = Math.max(0, damageMarked);
+            this.lethalDamage = Math.max(0, lethalDamage);
+            this.deathtouchDamage = deathtouchDamage;
         }
 
         public String name() {
@@ -550,6 +642,30 @@ public final class LiveGameState {
 
         public String colorKey() {
             return colorKey;
+        }
+
+        public int cardId() {
+            return cardId;
+        }
+
+        public int damageMarked() {
+            return damageMarked;
+        }
+
+        public int lethalDamage() {
+            return lethalDamage;
+        }
+
+        public boolean deathtouchDamage() {
+            return deathtouchDamage;
+        }
+
+        public boolean hasLethalDamageMarked() {
+            if (!creature || damageMarked <= 0) {
+                return false;
+            }
+            return deathtouchDamage
+                    || (lethalDamage > 0 && damageMarked >= lethalDamage);
         }
     }
 }
