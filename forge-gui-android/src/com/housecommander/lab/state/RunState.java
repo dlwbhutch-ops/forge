@@ -34,4 +34,10 @@ public final class RunState {
                 : "App stopped during the game • tournament checkpoint preserved • start another game when ready";
         return true;
     }
+
+    public void markStoppedGame() {
+        status = "PAUSED";
+        lastMessage = "Stopped unfinished game • " + totalGames
+                + " completed games saved • Run / resume retries the same pod";
+    }
 }

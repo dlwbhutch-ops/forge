@@ -12,5 +12,6 @@ fi
 "${compiler[@]}" -encoding UTF-8 -d "$task_classes" \
     forge-gui-android/src/com/housecommander/lab/state/RunState.java \
     forge-gui-android/src/com/housecommander/lab/state/GameLogFiles.java \
+    forge-gui-android/src/com/housecommander/lab/state/GameCancellation.java \
     .github/scripts/HouseAndroidStateSmoke.java
 java -cp "$task_classes" HouseAndroidStateSmoke
