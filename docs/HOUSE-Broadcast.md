@@ -25,6 +25,17 @@ rest of a player's panel to inspect every grouped permanent and public zone.
 On Android, **Full table** opens a full-screen viewer. Pause, Live, and Step affect
 only the spectator buffer. Forge continues resolving the game.
 
+On Android, **Watch current game** attaches to the running tournament or pilot
+game. It opens the live table without starting another game. If Android stopped
+the app process, the saved run is shown as **INTERRUPTED** and **Run / resume**
+continues from the next uncompleted pod. Completed games, standings, imported
+decks, and the selected roster are preserved. A saved RUNNING label alone is
+not treated as evidence that Forge is still running.
+
+The technical Forge log follows the current game in every mode, including
+gauntlets. Viewer snapshot failures are recorded separately in a `.viewer.log`
+sidecar and surfaced in the Watch status; they do not substitute game results.
+
 **Viewer settings** saves response focus, arrows, animation, and token-art
 preferences to `broadcast.properties` in the app's data directory. Defaults
 enable the features requested in the shared conversation. This file can be

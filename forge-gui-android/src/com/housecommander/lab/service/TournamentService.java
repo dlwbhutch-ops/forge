@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.Context;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
@@ -52,6 +53,8 @@ public final class TournamentService extends Service {
 
     private static final int NOTIFICATION_ID = 1901;
     private static final String CHANNEL_ID = "house_tournament";
+    private static final Object RUNNER_LOCK = new Object();
+    private static TournamentService activeWorker;
 
     /* Bridge 0.7 watchdog policy. */
     private static final int HARD_TIMEOUT_SECONDS = 60 * 60;
@@ -60,6 +63,22 @@ public final class TournamentService extends Service {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile boolean workerActive = false;
     private PowerManager.WakeLock wakeLock;
+
+    public static boolean hasActiveWorker() {
+        synchronized (RUNNER_LOCK) {
+            return activeWorker != null;
+        }
+    }
+
+    /** Activity and Service share a process; process loss clears this lease, but not the checkpoint. */
+    public static RunState displayState(Context context) {
+        synchronized (RUNNER_LOCK) {
+            StateStore store = new StateStore(context);
+            RunState state = store.load();
+            if (state.recoverInterruptedRun(activeWorker != null)) store.save(state);
+            return state;
+        }
+    }
 
     @Override
     public void onCreate() {
@@ -99,45 +118,53 @@ public final class TournamentService extends Service {
             return START_NOT_STICKY;
         }
 
-        startForegroundCompat("Preparing HOUSE Commander Lab");
-
-        if (workerActive) {
-            updateNotification("HOUSE runner is already active");
-            return START_NOT_STICKY;
+        synchronized (RUNNER_LOCK) {
+            startForegroundCompat("Preparing HOUSE Commander Lab");
+            if (activeWorker != null) {
+                updateNotification("HOUSE runner is already active");
+                if (activeWorker != this) stopSelf(startId);
+                return START_NOT_STICKY;
+            }
+            workerActive = true;
+            activeWorker = this;
         }
 
-        workerActive = true;
-        acquireWakeLock();
+        try {
+            acquireWakeLock();
 
-        final int workerStartId = startId;
-        if (ACTION_TEST.equals(action)) {
-            executor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    runEngineTest(workerStartId);
-                }
-            });
-        } else if (ACTION_PILOT.equals(action)) {
-            final String pilotDeck = intent.getStringExtra(EXTRA_PILOT_DECK);
-            executor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    runPilotGame(workerStartId, pilotDeck);
-                }
-            });
-        } else {
-            final int gauntlets = Math.max(
-                    1,
-                    intent.getIntExtra(EXTRA_GAUNTLETS, 1)
-            );
-            executor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    runTournament(workerStartId, gauntlets);
-                }
-            });
+            final int workerStartId = startId;
+            if (ACTION_TEST.equals(action)) {
+                executor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        runEngineTest(workerStartId);
+                    }
+                });
+            } else if (ACTION_PILOT.equals(action)) {
+                final String pilotDeck = intent.getStringExtra(EXTRA_PILOT_DECK);
+                executor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        runPilotGame(workerStartId, pilotDeck);
+                    }
+                });
+            } else {
+                final int gauntlets = Math.max(
+                        1,
+                        intent.getIntExtra(EXTRA_GAUNTLETS, 1)
+                );
+                executor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        runTournament(workerStartId, gauntlets);
+                    }
+                });
+            }
+
+        } catch (RuntimeException error) {
+            finishWorker(startId);
+            throw error;
         }
-
         return START_NOT_STICKY;
     }
 
@@ -164,6 +191,8 @@ public final class TournamentService extends Service {
             PodSpec pod = pack.schedule().get(0);
             List<DeckSpec> decks = resolvePod(pack, pod);
             File log = logFile("test", 1, pod);
+            state.lastLogPath = relativeLogPath(log);
+            store.save(state);
 
             GameOutcome outcome = engine.runCommanderGame(
                     decks,
@@ -214,6 +243,8 @@ public final class TournamentService extends Service {
                     getFilesDir(),
                     "logs/pilot/pilot-game.log"
             );
+            state.lastLogPath = relativeLogPath(log);
+            store.save(state);
             GameOutcome outcome = engine.runCommanderGameWithPilot(
                     decks,
                     0,
@@ -304,11 +335,17 @@ public final class TournamentService extends Service {
 
                     PodSpec pod = pack.schedule().get(i);
                     List<DeckSpec> decks = resolvePod(pack, pod);
+                    File log = logFile(
+                            "g" + String.format(Locale.US, "%04d", g),
+                            i + 1,
+                            pod
+                    );
 
                     state = store.load();
                     state.status = "RUNNING";
                     state.currentGauntlet = g;
                     state.nextPodIndex = i;
+                    state.lastLogPath = relativeLogPath(log);
                     state.lastMessage = "G"
                             + g
                             + "/"
@@ -323,12 +360,6 @@ public final class TournamentService extends Service {
                             + podCount;
                     store.save(state);
                     updateNotification(state.lastMessage);
-
-                    File log = logFile(
-                            "g" + String.format(Locale.US, "%04d", g),
-                            i + 1,
-                            pod
-                    );
 
                     GameOutcome outcome = engine.runCommanderGame(
                             decks,
@@ -638,6 +669,10 @@ public final class TournamentService extends Service {
         );
     }
 
+    private static String relativeLogPath(File log) {
+        return "logs/" + log.getParentFile().getName() + "/" + log.getName();
+    }
+
     private void acquireWakeLock() {
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm == null) {
@@ -657,12 +692,16 @@ public final class TournamentService extends Service {
     }
 
     private void finishWorker(int startId) {
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
+        synchronized (RUNNER_LOCK) {
+            try {
+                if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+                stopForeground(false);
+                stopSelf(startId);
+            } finally {
+                workerActive = false;
+                if (activeWorker == this) activeWorker = null;
+            }
         }
-        workerActive = false;
-        stopForeground(false);
-        stopSelf(startId);
     }
 
     private void createChannel() {
@@ -753,11 +792,16 @@ public final class TournamentService extends Service {
 
     @Override
     public void onDestroy() {
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
+        synchronized (RUNNER_LOCK) {
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+            List<Runnable> notStarted = executor.shutdownNow();
+            if (!notStarted.isEmpty()) {
+                workerActive = false;
+                if (activeWorker == this) activeWorker = null;
+            }
         }
-        executor.shutdownNow();
-        workerActive = false;
+        // A worker that already started releases its lease in finishWorker().
+        // Until then it may still be unwinding Forge; do not admit a second game.
         super.onDestroy();
     }
 }

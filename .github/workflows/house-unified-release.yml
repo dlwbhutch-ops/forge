@@ -27,6 +27,9 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Verify Android process recovery and tournament log selection
+        run: bash .github/scripts/test-house-android-state.sh
+
       - name: Install Maven 3.8.1
         run: |
           curl -L --fail --retry 3 -o apache-maven-3.8.1-bin.tar.gz \
