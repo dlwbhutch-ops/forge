@@ -18,8 +18,17 @@ javac -encoding UTF-8 -cp "$runtime_classpath" -d house-smoke-classes \
   $(find forge-gui-android/src/com/housecommander/core \
          forge-gui-android/src/com/housecommander/forgebridge \
          forge-gui-android/src/com/housecommander/spectator -name '*.java') \
-  .github/scripts/HouseRuntimeSmoke.java
+  forge-gui-android/src/com/housecommander/lab/state/GameCancellation.java \
+  .github/scripts/HouseRuntimeSmoke.java \
+  .github/scripts/HouseCancellationSmoke.java
 timeout 360 java -Xmx512m -cp "house-smoke-classes:$runtime_classpath" \
   HouseRuntimeSmoke house-smoke-runtime forge-gui-android/assets/house19/forge_decks house-literal-smoke.log \
   >house-runtime-smoke.log 2>&1
 tail -n 30 house-runtime-smoke.log
+: >house-cancellation-smoke.log
+for scenario in pilot ai locked; do
+  timeout 90 java -Xmx512m -cp "house-smoke-classes:$runtime_classpath" \
+    HouseCancellationSmoke house-smoke-runtime house-stop-logs "$scenario" \
+    >>house-cancellation-smoke.log 2>&1
+done
+tail -n 15 house-cancellation-smoke.log

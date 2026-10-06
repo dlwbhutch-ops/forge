@@ -24,6 +24,7 @@ import com.housecommander.lab.engine.GameOutcome;
 import com.housecommander.lab.state.ResultsWriter;
 import com.housecommander.lab.state.RunState;
 import com.housecommander.lab.state.StateStore;
+import com.housecommander.lab.state.GameCancellation;
 
 import java.io.File;
 import java.io.IOException;
@@ -47,6 +48,7 @@ public final class TournamentService extends Service {
     public static final String ACTION_RUN = "com.housecommander.lab.RUN";
     public static final String ACTION_TEST = "com.housecommander.lab.TEST";
     public static final String ACTION_PAUSE = "com.housecommander.lab.PAUSE";
+    public static final String ACTION_STOP = "com.housecommander.lab.STOP";
     public static final String ACTION_PILOT = "com.housecommander.lab.PILOT";
     public static final String EXTRA_GAUNTLETS = "gauntlets";
     public static final String EXTRA_PILOT_DECK = "pilot_deck";
@@ -62,11 +64,24 @@ public final class TournamentService extends Service {
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile boolean workerActive = false;
+    private volatile GameCancellation cancellation;
     private PowerManager.WakeLock wakeLock;
 
     public static boolean hasActiveWorker() {
         synchronized (RUNNER_LOCK) {
             return activeWorker != null;
+        }
+    }
+
+    public static boolean isStopRequested() {
+        synchronized (RUNNER_LOCK) {
+            return activeWorker != null && activeWorker.cancellation.isStopRequested();
+        }
+    }
+
+    public static boolean stopHasTimedOut() {
+        synchronized (RUNNER_LOCK) {
+            return activeWorker != null && activeWorker.cancellation.stopHasTimedOut();
         }
     }
 
@@ -76,6 +91,10 @@ public final class TournamentService extends Service {
             StateStore store = new StateStore(context);
             RunState state = store.load();
             if (state.recoverInterruptedRun(activeWorker != null)) store.save(state);
+            if (activeWorker != null && activeWorker.cancellation.isStopRequested()) {
+                state.status = "STOPPING";
+                state.lastMessage = "Stopping current game • completed results are saved";
+            }
             return state;
         }
     }
@@ -93,6 +112,19 @@ public final class TournamentService extends Service {
         }
 
         String action = intent.getAction();
+
+        if (ACTION_STOP.equals(action)) {
+            synchronized (RUNNER_LOCK) {
+                if (activeWorker != null) {
+                    activeWorker.updateNotification("Stopping current game — completed results saved");
+                    activeWorker.cancellation.requestStop();
+                } else {
+                    displayState(this);
+                    stopSelf(startId);
+                }
+            }
+            return START_NOT_STICKY;
+        }
 
         if (ACTION_PAUSE.equals(action)) {
             try {
@@ -118,6 +150,7 @@ public final class TournamentService extends Service {
             return START_NOT_STICKY;
         }
 
+        final GameCancellation control;
         synchronized (RUNNER_LOCK) {
             startForegroundCompat("Preparing HOUSE Commander Lab");
             if (activeWorker != null) {
@@ -126,6 +159,8 @@ public final class TournamentService extends Service {
                 return START_NOT_STICKY;
             }
             workerActive = true;
+            control = new GameCancellation();
+            cancellation = control;
             activeWorker = this;
         }
 
@@ -137,7 +172,7 @@ public final class TournamentService extends Service {
                 executor.execute(new Runnable() {
                     @Override
                     public void run() {
-                        runEngineTest(workerStartId);
+                        runEngineTest(workerStartId, control);
                     }
                 });
             } else if (ACTION_PILOT.equals(action)) {
@@ -145,7 +180,7 @@ public final class TournamentService extends Service {
                 executor.execute(new Runnable() {
                     @Override
                     public void run() {
-                        runPilotGame(workerStartId, pilotDeck);
+                        runPilotGame(workerStartId, pilotDeck, control);
                     }
                 });
             } else {
@@ -156,7 +191,7 @@ public final class TournamentService extends Service {
                 executor.execute(new Runnable() {
                     @Override
                     public void run() {
-                        runTournament(workerStartId, gauntlets);
+                        runTournament(workerStartId, gauntlets, control);
                     }
                 });
             }
@@ -168,11 +203,13 @@ public final class TournamentService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void runEngineTest(int startId) {
+    private void runEngineTest(int startId, GameCancellation control) {
         StateStore store = new StateStore(this);
         RunState state = store.load();
 
         try {
+            control.bindToCurrentThread();
+            control.check();
             state.status = "TESTING";
             state.lastMessage = "Running one literal Forge test game";
             store.save(state);
@@ -202,27 +239,28 @@ public final class TournamentService extends Service {
             );
             String winner = validateWinner(decks, outcome.winner());
 
-            state = store.load();
-            state.status = "TEST_COMPLETE";
-            state.lastMessage = "Test winner: " + winner + " • " + outcome.engineVersion();
-            store.save(state);
-            updateNotification(state.lastMessage);
+            control.commitVerifiedGame(() -> {
+                RunState completed = store.load();
+                completed.status = "TEST_COMPLETE";
+                completed.lastMessage = "Test winner: " + winner + " • " + outcome.engineVersion();
+                store.save(completed);
+                updateNotification(completed.lastMessage);
+            });
         } catch (Throwable t) {
-            state = store.load();
-            state.status = "BLOCKED";
-            state.lastMessage = safeMessage(t);
-            store.save(state);
-            updateNotification("Blocked: " + state.lastMessage);
+            handleFailure(store, control, t);
         } finally {
+            control.releaseWorker();
             finishWorker(startId);
         }
     }
 
-    private void runPilotGame(int startId, String pilotDeckName) {
+    private void runPilotGame(int startId, String pilotDeckName, GameCancellation control) {
         StateStore store = new StateStore(this);
         RunState state = store.load();
 
         try {
+            control.bindToCurrentThread();
+            control.check();
             HousePackage pack = HouseRuntime.loadActivePackage(this);
             List<DeckSpec> decks = pilotPod(pack, pilotDeckName);
             DeckSpec pilot = decks.get(0);
@@ -254,30 +292,28 @@ public final class TournamentService extends Service {
             );
             String winner = validateWinner(decks, outcome.winner());
 
-            state = store.load();
-            state.status = "PILOT_COMPLETE";
-            state.lastMessage = "Pilot game winner: "
-                    + winner
-                    + " • "
-                    + outcome.engineVersion();
-            store.save(state);
-            updateNotification(state.lastMessage);
+            control.commitVerifiedGame(() -> {
+                RunState completed = store.load();
+                completed.status = "PILOT_COMPLETE";
+                completed.lastMessage = "Pilot game winner: " + winner + " • " + outcome.engineVersion();
+                store.save(completed);
+                updateNotification(completed.lastMessage);
+            });
         } catch (Throwable t) {
-            state = store.load();
-            state.status = "BLOCKED";
-            state.lastMessage = safeMessage(t);
-            store.save(state);
-            updateNotification("Blocked: " + state.lastMessage);
+            handleFailure(store, control, t);
         } finally {
+            control.releaseWorker();
             finishWorker(startId);
         }
     }
 
-    private void runTournament(int startId, int requestedGauntlets) {
+    private void runTournament(int startId, int requestedGauntlets, GameCancellation control) {
         StateStore store = new StateStore(this);
         RunState state = store.load();
 
         try {
+            control.bindToCurrentThread();
+            control.check();
             HousePackage pack = HouseRuntime.loadActivePackage(this);
 
             if (pack.schedule() == null || pack.schedule().isEmpty()) {
@@ -319,6 +355,7 @@ public final class TournamentService extends Service {
                 store.save(state);
 
                 for (int i = state.nextPodIndex; i < podCount; i++) {
+                    control.check();
                     if (store.consumePauseRequest()) {
                         state = store.load();
                         state.status = "PAUSED";
@@ -375,23 +412,7 @@ public final class TournamentService extends Service {
                      * into the literal log, so no duplicate marker is appended
                      * here.
                      */
-                    state = store.load();
-                    state.currentGauntlet = g;
-                    for (DeckSpec d : decks) {
-                        increment(state.games, d.deck());
-                    }
-                    increment(state.wins, winner);
-                    state.totalGames++;
-                    state.nextPodIndex = i + 1;
-                    state.lastMessage = "Winner: "
-                            + winner
-                            + " • G"
-                            + g
-                            + " game "
-                            + (i + 1)
-                            + "/"
-                            + podCount;
-                    store.save(state);
+                    checkpointGame(store, control, g, i + 1, podCount, decks, winner);
                 }
 
                 /*
@@ -441,13 +462,44 @@ public final class TournamentService extends Service {
             store.save(state);
             updateNotification(state.lastMessage);
         } catch (Throwable t) {
-            state = store.load();
-            state.status = "BLOCKED";
-            state.lastMessage = safeMessage(t);
-            store.save(state);
-            updateNotification("Blocked: " + state.lastMessage);
+            handleFailure(store, control, t);
         } finally {
+            control.releaseWorker();
             finishWorker(startId);
+        }
+    }
+
+    private void checkpointGame(StateStore store, GameCancellation control, int gauntlet,
+            int nextPod, int podCount, List<DeckSpec> decks, String winner) {
+        control.commitVerifiedGame(() -> {
+            RunState completed = store.load();
+            completed.currentGauntlet = gauntlet;
+            for (DeckSpec deck : decks) increment(completed.games, deck.deck());
+            increment(completed.wins, winner);
+            completed.totalGames++;
+            completed.nextPodIndex = nextPod;
+            completed.lastMessage = "Winner: " + winner + " • G" + gauntlet + " game " + nextPod + "/" + podCount;
+            store.save(completed);
+        });
+    }
+
+    private void handleFailure(StateStore store, GameCancellation control, Throwable error) {
+        // Forge restores the interrupt flag after cleanup. Clear it while committing
+        // recovery state: SharedPreferences.commit() waits on an interruptible latch.
+        boolean interrupted = Thread.interrupted();
+        try {
+            RunState saved = store.load();
+            if (control.isStopRequested()) {
+                saved.markStoppedGame();
+                store.clearPauseRequest();
+            } else {
+                saved.status = "BLOCKED";
+                saved.lastMessage = safeMessage(error);
+            }
+            store.save(saved);
+            updateNotification(saved.lastMessage);
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
         }
     }
 
@@ -696,7 +748,9 @@ public final class TournamentService extends Service {
             try {
                 if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
                 stopForeground(false);
-                stopSelf(startId);
+                // Pause/stop commands can have newer start IDs than the worker.
+                // This lease still owns the runner, so all of its commands are done.
+                stopSelf();
             } finally {
                 workerActive = false;
                 if (activeWorker == this) activeWorker = null;
@@ -756,13 +810,19 @@ public final class TournamentService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
 
-        return builder
+        builder
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
                 .setContentTitle("HOUSE Commander Lab")
                 .setContentText(text)
                 .setContentIntent(pending)
-                .setOngoing(workerActive)
-                .build();
+                .setOngoing(workerActive);
+        if (workerActive && cancellation != null && !cancellation.isStopRequested()) {
+            PendingIntent stop = PendingIntent.getService(this, 1,
+                    new Intent(this, TournamentService.class).setAction(ACTION_STOP),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            builder.addAction(android.R.drawable.ic_media_pause, "Stop game", stop);
+        }
+        return builder.build();
     }
 
     private static void increment(Map<String, Integer> values, String key) {

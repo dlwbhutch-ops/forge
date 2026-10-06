@@ -307,4 +307,6 @@ jobs:
           path: |
             house-runtime-smoke.log
             house-literal-smoke.log
+            house-cancellation-smoke.log
+            house-stop-logs/*.log
           if-no-files-found: warn

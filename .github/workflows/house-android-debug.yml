@@ -119,6 +119,8 @@ jobs:
           path: |
             house-runtime-smoke.log
             house-literal-smoke.log
+            house-cancellation-smoke.log
+            house-stop-logs/*.log
             house-maven.log
 
       - name: Upload HOUSE APK

@@ -94,6 +94,10 @@ public final class ForgeBridge {
         return snapshotError;
     }
 
+    public static boolean requiresProcessRestart() {
+        return ENGINE_POISONED.get();
+    }
+
     private ForgeBridge() {
     }
 
@@ -744,12 +748,7 @@ public final class ForgeBridge {
              * synchronized inside Forge and gives its game loop an explicit
              * terminal state to observe.
              */
-            forceDrawIfNeeded(game);
-            terminated = awaitTermination(
-                    executor,
-                    GAMEOVER_GRACE_SECONDS,
-                    originalFailure
-            );
+            terminated = signalGameOverAndAwait(executor, game, originalFailure);
         }
 
         if (!terminated) {
@@ -779,6 +778,27 @@ public final class ForgeBridge {
             }
             return false;
         }
+    }
+
+    /** Even acquiring Forge's Game monitor can block when its simulation is stuck. */
+    private static boolean signalGameOverAndAwait(
+            ExecutorService executor, Game game, Throwable originalFailure
+    ) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(GAMEOVER_GRACE_SECONDS);
+        Thread signal = new Thread(() -> forceDrawIfNeeded(game), "HOUSE-Forge-Abort");
+        signal.setDaemon(true);
+        signal.start();
+        boolean terminated = awaitTermination(executor, GAMEOVER_GRACE_SECONDS, originalFailure);
+        try {
+            long remaining = deadline - System.nanoTime();
+            if (signal.isAlive() && remaining > 0L) TimeUnit.NANOSECONDS.timedJoin(signal, remaining);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            if (originalFailure != null) originalFailure.addSuppressed(interrupted);
+        }
+        boolean stopped = terminated && !signal.isAlive();
+        if (!stopped) signal.interrupt();
+        return stopped;
     }
 
     private static void shutdownCompletedExecutor(ExecutorService executor) {
@@ -818,7 +838,7 @@ public final class ForgeBridge {
      */
     private static ProgressSnapshot trySnapshot(Game game) {
         try {
-            if (game == null) {
+            if (game == null || ENGINE_POISONED.get()) {
                 return null;
             }
 
@@ -1313,6 +1333,10 @@ public final class ForgeBridge {
             String... markers
     ) {
         try {
+            if (ENGINE_POISONED.get()) {
+                writeMinimalFailureLog(logPath, elapsedMs, new IllegalStateException(poisonReason), markers);
+                return;
+            }
             writeLog(game, logPath, elapsedMs, markers);
         } catch (Throwable logFailure) {
             if (originalFailure != null && logFailure != originalFailure) {

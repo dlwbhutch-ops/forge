@@ -64,6 +64,7 @@ public final class MainActivity extends Activity {
     private Button runOneButton;
     private Button run500Button;
     private Button pauseButton;
+    private Button stopButton;
     private Button resetButton;
     private TextView libraryStatus;
     private TextView libraryDetails;
@@ -91,6 +92,7 @@ public final class MainActivity extends Activity {
     private final Set<String> seenVisualPiles = new HashSet<String>();
     private long shownPilotDecisionId = -1L;
     private boolean pilotDialogOpen;
+    private AlertDialog pilotDialog;
 
     private boolean preflightPass;
     private boolean engineAvailable;
@@ -152,6 +154,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (fullScreenDialog != null) fullScreenDialog.dismiss();
+        if (pilotDialog != null) pilotDialog.dismiss();
         handler.removeCallbacks(refresh);
         if (cardArtCache != null) {
             cardArtCache.shutdown();
@@ -314,6 +317,10 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(pauseButton);
+
+        stopButton = button("Stop current game");
+        stopButton.setOnClickListener(v -> stopRun());
+        root.addView(stopButton);
 
         resetButton = button("Reset tournament checkpoint");
         resetButton.setOnClickListener(new View.OnClickListener() {
@@ -609,12 +616,17 @@ public final class MainActivity extends Activity {
 
     private void updateButtons(RunState state) {
         boolean running = TournamentService.hasActiveWorker();
+        boolean stopping = TournamentService.isStopRequested();
+        boolean closeRequired = TournamentService.stopHasTimedOut() || ForgeBridge.requiresProcessRestart();
         boolean enabled = preflightPass && engineAvailable && !running;
 
         testButton.setEnabled(enabled);
         runOneButton.setEnabled(enabled);
         run500Button.setEnabled(enabled);
-        pauseButton.setEnabled(running);
+        pauseButton.setEnabled(running && !stopping);
+        stopButton.setEnabled(closeRequired || (running && !stopping));
+        stopButton.setText(closeRequired ? "Close app to finish stopping"
+                : stopping ? "Stopping game…" : "Stop current game");
         resetButton.setEnabled(!running);
         importButton.setEnabled(!running);
         manageLibraryButton.setEnabled(!running);
@@ -689,11 +701,13 @@ public final class MainActivity extends Activity {
 
     private void refreshPilotDecision() {
         if (pilotDialogOpen) {
+            if (!PilotDecisionBridge.hasPending() && pilotDialog != null) pilotDialog.dismiss();
             return;
         }
 
         final PilotDecision decision = PilotDecisionBridge.current();
-        if (!decision.pending()
+        if (TournamentService.isStopRequested()
+                || !decision.pending()
                 || decision.id() == shownPilotDecisionId
                 || isFinishing()) {
             return;
@@ -722,6 +736,7 @@ public final class MainActivity extends Activity {
                             }
                         }
                 )
+                .setNegativeButton("Stop game", (d, which) -> stopRun())
                 .create();
 
         dialog.setCancelable(false);
@@ -732,6 +747,7 @@ public final class MainActivity extends Activity {
                             android.content.DialogInterface d
                     ) {
                         pilotDialogOpen = false;
+                        pilotDialog = null;
                         PilotDecision stillPending =
                                 PilotDecisionBridge.current();
                         if (stillPending.pending()
@@ -741,6 +757,7 @@ public final class MainActivity extends Activity {
                     }
                 }
         );
+        pilotDialog = dialog;
         dialog.show();
     }
 
@@ -761,6 +778,16 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(this, TournamentService.class)
                 .setAction(TournamentService.ACTION_PAUSE);
         startService(intent);
+    }
+
+    private void stopRun() {
+        if (TournamentService.stopHasTimedOut() || ForgeBridge.requiresProcessRestart()) {
+            // An engine that ignores interruption needs a fresh process. The
+            // explicit close leaves the last durable checkpoint available on reopen.
+            android.os.Process.killProcess(android.os.Process.myPid());
+            return;
+        }
+        startService(new Intent(this, TournamentService.class).setAction(TournamentService.ACTION_STOP));
     }
 
     private void startServiceCompat(Intent intent, boolean foreground) {
@@ -821,7 +848,14 @@ public final class MainActivity extends Activity {
             seenVisualPiles.clear();
         }
 
-        if ("INTERRUPTED".equals(run.status)) {
+        if ("STOPPING".equals(run.status)) {
+            watchStatus.setText(TournamentService.stopHasTimedOut()
+                    ? "Engine is not responding • use Close app to finish stopping, then reopen and resume"
+                    : "Stopping current game • completed results are saved");
+        } else if (ForgeBridge.requiresProcessRestart()) {
+            watchStatus.setText("Game stopped • close and reopen the app before resuming • completed results are saved");
+        } else if ("INTERRUPTED".equals(run.status)
+                || ("PAUSED".equals(run.status) && run.lastMessage.startsWith("Stopped unfinished game"))) {
             watchStatus.setText("Game stopped • completed games saved • use Run / resume to continue the tournament");
         } else if (!snapshotError.isEmpty()) {
             watchStatus.setText("Live table update unavailable • open the technical Forge log for details");
