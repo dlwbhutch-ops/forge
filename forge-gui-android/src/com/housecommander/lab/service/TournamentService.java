@@ -692,14 +692,15 @@ public final class TournamentService extends Service {
     }
 
     private void finishWorker(int startId) {
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
-        }
         synchronized (RUNNER_LOCK) {
-            stopForeground(false);
-            stopSelf(startId);
-            workerActive = false;
-            if (activeWorker == this) activeWorker = null;
+            try {
+                if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+                stopForeground(false);
+                stopSelf(startId);
+            } finally {
+                workerActive = false;
+                if (activeWorker == this) activeWorker = null;
+            }
         }
     }
 
@@ -791,11 +792,15 @@ public final class TournamentService extends Service {
 
     @Override
     public void onDestroy() {
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
+        synchronized (RUNNER_LOCK) {
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+            List<Runnable> notStarted = executor.shutdownNow();
+            if (!notStarted.isEmpty()) {
+                workerActive = false;
+                if (activeWorker == this) activeWorker = null;
+            }
         }
-        executor.shutdownNow();
-        // The interrupted worker releases its process lease in finishWorker().
+        // A worker that already started releases its lease in finishWorker().
         // Until then it may still be unwinding Forge; do not admit a second game.
         super.onDestroy();
     }
