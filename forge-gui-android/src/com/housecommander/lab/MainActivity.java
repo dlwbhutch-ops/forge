@@ -24,6 +24,7 @@ import android.widget.TextView;
 import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
 import com.housecommander.forgebridge.FriendlyGameLog;
+import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.LiveGameState;
 import com.housecommander.forgebridge.PilotDecision;
 import com.housecommander.forgebridge.PilotDecisionBridge;
@@ -33,6 +34,7 @@ import com.housecommander.lab.engine.ForgeDatabaseBootstrap;
 import com.housecommander.lab.engine.ForgeEngineAdapter;
 import com.housecommander.lab.service.TournamentService;
 import com.housecommander.lab.state.ResultsWriter;
+import com.housecommander.lab.state.GameLogFiles;
 import com.housecommander.lab.state.RunState;
 import com.housecommander.lab.state.StateStore;
 import com.housecommander.spectator.BroadcastSettings;
@@ -328,7 +330,13 @@ public final class MainActivity extends Activity {
         watchButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startTest();
+                if (TournamentService.hasActiveWorker()) {
+                    SpectatorPlayback.goLive();
+                    refreshWatchView();
+                    showFullTable();
+                } else {
+                    startTest();
+                }
             }
         });
         root.addView(watchButton);
@@ -600,10 +608,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateButtons(RunState state) {
-        boolean running = state != null
-                && ("RUNNING".equals(state.status)
-                || "TESTING".equals(state.status)
-                || "PILOTING".equals(state.status));
+        boolean running = TournamentService.hasActiveWorker();
         boolean enabled = preflightPass && engineAvailable && !running;
 
         testButton.setEnabled(enabled);
@@ -615,7 +620,8 @@ public final class MainActivity extends Activity {
         manageLibraryButton.setEnabled(!running);
         rosterButton.setEnabled(!running);
         defaultRosterButton.setEnabled(!running);
-        watchButton.setEnabled(enabled);
+        watchButton.setEnabled(running || enabled);
+        watchButton.setText(running ? "Watch current game" : "Run & watch 1 literal Forge game");
         playButton.setEnabled(enabled);
 
         long games500 = (long) podCount * 500L;
@@ -766,7 +772,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateRunState() {
-        RunState state = new StateStore(this).load();
+        RunState state = TournamentService.displayState(this);
 
         runStatus.setText(state.status + " • " + state.lastMessage);
         progress.setMax(Math.max(1, podCount));
@@ -806,14 +812,20 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        RunState run = new StateStore(this).load();
+        RunState run = TournamentService.displayState(this);
         LiveGameState live = SpectatorPlayback.visibleState();
+        boolean running = TournamentService.hasActiveWorker();
+        String snapshotError = ForgeBridge.snapshotError();
 
         if (live.sequence() <= 1L) {
             seenVisualPiles.clear();
         }
 
-        if (live.sequence() > 1L) {
+        if ("INTERRUPTED".equals(run.status)) {
+            watchStatus.setText("Game stopped • completed games saved • use Run / resume to continue the tournament");
+        } else if (!snapshotError.isEmpty()) {
+            watchStatus.setText("Live table update unavailable • open the technical Forge log for details");
+        } else if (live.sequence() > 1L) {
             String winner = live.winner().isEmpty() ? "" : " • winner " + live.winner();
             watchStatus.setText(
                     "Turn " + live.turn()
@@ -827,7 +839,7 @@ public final class MainActivity extends Activity {
                             : " • live")
                             + winner
             );
-        } else if ("TESTING".equals(run.status)) {
+        } else if (running) {
             watchStatus.setText("LIVE • Forge is starting the literal game");
         } else {
             watchStatus.setText("Spectator board ready");
@@ -860,22 +872,22 @@ public final class MainActivity extends Activity {
         }
         watchTurnSummary.setText(turnSummary);
 
-        File log;
-        if ("PILOTING".equals(run.status)
-                || "PILOT_COMPLETE".equals(run.status)) {
-            log = new File(
-                    getFilesDir(),
-                    "logs/pilot/pilot-game.log"
-            );
-        } else {
-            File testDir = new File(getFilesDir(), "logs/test");
-            log = newestLog(testDir);
+        File log = GameLogFiles.find(getFilesDir(), run);
+        StringBuilder diagnostics = new StringBuilder("Runner: ")
+                .append(running ? "active" : "inactive")
+                .append(" • viewer sequence ").append(live.sequence()).append('\n');
+        if (!snapshotError.isEmpty()) diagnostics.append("Viewer: ").append(snapshotError).append('\n');
+        if (log != null) {
+            diagnostics.append("Game log: ").append(log.getName()).append('\n');
+            diagnostics.append(readLogTail(new File(log.getPath() + ".viewer.log"), 8000));
+            diagnostics.append(readLogTail(log, 16000));
         }
-        if (log == null) {
-            return;
-        }
+        watchDetails.setText(diagnostics.toString());
+    }
+
+    private static String readLogTail(File log, int max) {
+        if (!log.isFile()) return "";
         try {
-            int max = 16000;
             long length = log.length();
             long start = Math.max(0L, length - max);
             byte[] bytes = new byte[(int) (length - start)];
@@ -887,9 +899,10 @@ public final class MainActivity extends Activity {
             if (start > 0L) {
                 text = "… earlier log omitted …\n" + text;
             }
-            watchDetails.setText(text);
+            return text + "\n";
         } catch (Throwable ignored) {
             // Forge can be writing this file during the refresh; retry next tick.
+            return "";
         }
     }
 
@@ -1244,26 +1257,6 @@ public final class MainActivity extends Activity {
             out.insert(0, "… ");
         }
         return out.toString();
-    }
-
-    private static File newestLog(File directory) {
-        if (directory == null || !directory.isDirectory()) {
-            return null;
-        }
-        File[] files = directory.listFiles();
-        if (files == null) {
-            return null;
-        }
-        File newest = null;
-        for (File file : files) {
-            if (!file.isFile() || !file.getName().endsWith(".log")) {
-                continue;
-            }
-            if (newest == null || file.lastModified() > newest.lastModified()) {
-                newest = file;
-            }
-        }
-        return newest;
     }
 
     private void confirmReset() {

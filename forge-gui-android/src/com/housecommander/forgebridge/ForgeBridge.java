@@ -40,6 +40,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -87,6 +88,11 @@ public final class ForgeBridge {
     private static final AtomicBoolean ENGINE_POISONED = new AtomicBoolean(false);
     private static volatile String poisonReason = "";
     private static volatile LiveGameState liveGameState = LiveGameState.idle();
+    private static volatile String snapshotError = "";
+
+    public static String snapshotError() {
+        return snapshotError;
+    }
 
     private ForgeBridge() {
     }
@@ -297,10 +303,11 @@ public final class ForgeBridge {
         );
         final Game game = match.createGame();
         liveGameState = LiveGameState.starting();
+        snapshotError = "";
         SpectatorPlayback.reset(liveGameState);
         final long startedNs = System.nanoTime();
         final ProgressHeartbeat heartbeat = new ProgressHeartbeat(startedNs);
-        final LiveStateRecorder liveRecorder = new LiveStateRecorder(game);
+        final LiveStateRecorder liveRecorder = new LiveStateRecorder(game, logPath);
         game.subscribeToEvents(heartbeat);
         game.subscribeToEvents(liveRecorder);
 
@@ -321,6 +328,7 @@ public final class ForgeBridge {
         final Future<?> future = executor.submit(new Runnable() {
             @Override
             public void run() {
+                liveRecorder.publish("GAME_READY", false);
                 match.startGame(game);
             }
         });
@@ -1131,10 +1139,16 @@ public final class ForgeBridge {
 
         private final Game game;
         private final AtomicLong sequence = new AtomicLong(1L);
+        private final File diagnosticLog;
+        private final Set<String> reportedErrors = new HashSet<String>();
         private long lastCaptureNs;
 
-        private LiveStateRecorder(Game game) {
+        private LiveStateRecorder(Game game, String logPath) {
             this.game = game;
+            diagnosticLog = new File(logPath + ".viewer.log");
+            if (diagnosticLog.isFile() && !diagnosticLog.delete()) {
+                System.err.println("HOUSE viewer could not clear diagnostics from the prior attempt");
+            }
         }
 
         @Subscribe
@@ -1178,8 +1192,10 @@ public final class ForgeBridge {
                 );
                 liveGameState = next;
                 SpectatorPlayback.record(next);
-            } catch (Throwable ignored) {
-                if (force) {
+                snapshotError = "";
+            } catch (Throwable error) {
+                reportCaptureError(eventName, error);
+                if (force && liveGameState.players().isEmpty()) {
                     liveGameState = new LiveGameState(
                             sequence.incrementAndGet(),
                             eventName,
@@ -1193,6 +1209,18 @@ public final class ForgeBridge {
                     );
                     SpectatorPlayback.record(liveGameState);
                 }
+            }
+        }
+
+        private void reportCaptureError(String eventName, Throwable error) {
+            snapshotError = error.getClass().getName() + ": " + safeMessage(error);
+            if (reportedErrors.size() >= 3 || !reportedErrors.add(snapshotError)) return;
+            // Keep viewer failures separate from Forge's authoritative winner/audit log.
+            try (PrintWriter out = new PrintWriter(new FileWriter(diagnosticLog, reportedErrors.size() > 1))) {
+                out.println("HOUSE_VIEWER_ERROR event=" + eventName + " " + snapshotError);
+                error.printStackTrace(out);
+            } catch (IOException failure) {
+                System.err.println("HOUSE viewer diagnostics could not be written: " + safeMessage(failure));
             }
         }
     }

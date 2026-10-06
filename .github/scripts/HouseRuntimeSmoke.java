@@ -1,6 +1,8 @@
 import com.housecommander.forgebridge.ForgeBridge;
 import com.housecommander.forgebridge.ForgeDeckLoader;
 import com.housecommander.forgebridge.HouseForgeRuntime;
+import com.housecommander.forgebridge.LiveGameState;
+import com.housecommander.forgebridge.SpectatorPlayback;
 import forge.deck.Deck;
 import java.io.File;
 import java.nio.file.Files;
@@ -8,6 +10,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import forge.item.PaperCard;
 
 /**
@@ -66,6 +70,20 @@ public final class HouseRuntimeSmoke {
         }
 
         Path log = Path.of(args[2]);
+        AtomicBoolean running = new AtomicBoolean(true);
+        AtomicLong observedSequence = new AtomicLong();
+        Thread viewer = new Thread(() -> {
+            while (running.get()) {
+                LiveGameState frame = SpectatorPlayback.latestState();
+                if (frame.players().size() == 4 && frame.turn() > 0 && !frame.gameOver()) {
+                    observedSequence.set(frame.sequence());
+                }
+                try { Thread.sleep(50L); }
+                catch (InterruptedException stopped) { return; }
+            }
+        }, "HOUSE-Smoke-Viewer");
+        viewer.setDaemon(true);
+        viewer.start();
         try {
             String winner = ForgeBridge.runCommanderGame(
                     decks,
@@ -102,7 +120,16 @@ public final class HouseRuntimeSmoke {
                             + "s turns="
                             + turns
             );
+        } finally {
+            running.set(false);
+            viewer.interrupt();
+            viewer.join(1000L);
         }
+
+        if (observedSequence.get() <= 1L) {
+            throw new AssertionError("No four-player spectator snapshot during the live game: " + ForgeBridge.snapshotError());
+        }
+        System.out.println("LITERAL_LIVE_BROADCAST_PASS sequence=" + observedSequence.get());
 
         System.exit(0);
     }
