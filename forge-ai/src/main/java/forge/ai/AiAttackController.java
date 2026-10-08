@@ -884,7 +884,7 @@ public class AiAttackController {
         if (!nextTurn) {
             for (final Card attacker : this.attackers) {
                 final GameEntity finalDefender = defender;
-                futures.add(CompletableFuture.supplyAsync(()-> {
+                futures.add(AttackRequirementTask.evaluate(()-> {
                     GameEntity mustAttackDef = null;
                     if (attacker.getSVar("MustAttack").equals("True")) {
                         mustAttackDef = finalDefender;
@@ -932,9 +932,7 @@ public class AiAttackController {
                         }
                     }
                     if (mustAttackDef != null) {
-                        // combat is shared across these parallel futures and its attacker
-                        // multimap is not thread-safe; unsynchronized addAttacker calls
-                        // collide (ConcurrentModificationException, dropped attackers)
+                        // Apply the forced attacker before evaluating the next creature.
                         synchronized (combat) {
                             combat.addAttacker(attacker, mustAttackDef);
                         }
