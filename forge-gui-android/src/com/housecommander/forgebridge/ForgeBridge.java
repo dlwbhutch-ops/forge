@@ -651,7 +651,10 @@ public final class ForgeBridge {
             throw failure;
         }
 
-        if (game.getOutcome().isDraw()) {
+        // Forge's cleanup setGameOver(Draw) can mark surviving players as wins.
+        // The explicit end reason must take precedence over those player stats.
+        if (game.getOutcome().getWinCondition() == GameEndReason.Draw
+                || game.getOutcome().isDraw()) {
             IllegalStateException failure = new IllegalStateException(
                     "Forge Commander game ended in a draw; HOUSE will not guess a winner"
             );
@@ -884,7 +887,8 @@ public final class ForgeBridge {
     private static LiveGameState captureLiveState(
             Game game,
             long sequence,
-            String lastEvent
+            String lastEvent,
+            boolean outcomeValidated
     ) {
         if (game == null) {
             return LiveGameState.idle();
@@ -1022,7 +1026,7 @@ public final class ForgeBridge {
         }
 
         String winner = "";
-        if (game.getOutcome() != null
+        if (outcomeValidated && game.getOutcome() != null
                 && !game.getOutcome().isDraw()
                 && game.getOutcome().getWinningLobbyPlayer() != null) {
             winner = safeText(game.getOutcome().getWinningLobbyPlayer().getName());
@@ -1036,7 +1040,7 @@ public final class ForgeBridge {
                 activePlayer,
                 playerStates,
                 stack,
-                game.isGameOver(),
+                outcomeValidated && game.isGameOver(),
                 winner,
                 priorityPlayer,
                 respondingPlayer,
@@ -1208,7 +1212,11 @@ public final class ForgeBridge {
                 LiveGameState next = captureLiveState(
                         game,
                         sequence.incrementAndGet(),
-                        eventName
+                        eventName,
+                        // Cleanup can emit outcome events after a timeout or stop.
+                        // Only the successful, validated return path may announce
+                        // a result; ordinary events still update the live board.
+                        force && "GAME_COMPLETE".equals(eventName)
                 );
                 liveGameState = next;
                 SpectatorPlayback.record(next);
