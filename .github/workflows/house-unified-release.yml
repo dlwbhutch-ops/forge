@@ -18,7 +18,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Bundle Forge rules resources
-        run: python3 .github/scripts/package-house-runtime.py
+        run: |
+          python3 .github/scripts/refresh-house-forge.py
+          python3 .github/scripts/package-house-runtime.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -124,7 +126,9 @@ jobs:
           echo "HOUSE_SIGNED_APK=$SIGNED" >> "$GITHUB_ENV"
 
       - name: Verify Android/Forge literal runtime
-        run: bash .github/scripts/smoke-house-runtime.sh
+        run: |
+          bash .github/scripts/smoke-house-runtime.sh
+          bash .github/scripts/test-house-effect-update.sh
 
       - name: Download platform Java 17 runtimes
         run: |

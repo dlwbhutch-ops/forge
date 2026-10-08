@@ -195,6 +195,7 @@ public final class MainActivity extends Activity {
         );
         version.setAlpha(0.75f);
         root.addView(version);
+        CardUpdatesUi.add(this, root);
 
         String device = Build.MANUFACTURER
                 + " "

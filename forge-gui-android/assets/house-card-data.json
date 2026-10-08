@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-08",
+  "sourceCommit": "0fa862eb1c85d41d656f7a73ec6ad223fd3417d3",
+  "enginePending": 0,
+  "categories": [
+    {
+      "label": "Card rules",
+      "path": "forge-gui/res/cardsfolder",
+      "revision": "8c4a3ee453d495057f0998f248ec628caa5a32d9"
+    },
+    {
+      "label": "Token effects",
+      "path": "forge-gui/res/tokenscripts",
+      "revision": "769d63f399629161d97bb4190bdd8777c060d3eb"
+    },
+    {
+      "label": "Sets",
+      "path": "forge-gui/res/editions",
+      "revision": "769d63f399629161d97bb4190bdd8777c060d3eb"
+    }
+  ],
+  "engineSourceCommit": "0fa862eb1c85d41d656f7a73ec6ad223fd3417d3",
+  "cardScripts": 34074,
+  "tokenScripts": 855
+}

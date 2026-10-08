@@ -48,7 +48,7 @@ public final class HouseStallDiagnostics {
     public static String[] append(String[] markers) {
         List<String> lines = new ArrayList<>();
         if (markers != null) lines.addAll(Arrays.asList(markers));
-        lines.add("HOUSE_APK_BUILD=195");
+        lines.add("HOUSE_APK_BUILD=196");
         lines.addAll(Arrays.asList(snapshot));
         return lines.toArray(new String[0]);
     }

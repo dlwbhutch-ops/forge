@@ -10,6 +10,10 @@ import runpy
 root = Path(__file__).resolve().parents[2]
 runpy.run_path(str(root / ".github/scripts/build-house-token-registry.py"), run_name="__main__")
 res = root / "forge-gui/res"
+# Empower derives token filenames at runtime, so ordinary TokenScript scans miss them.
+for token in ("u_empower", "u_empower_jace"):
+    if not (res / "tokenscripts" / (token + ".txt")).is_file():
+        raise RuntimeError(f"Missing required Empower token: {token}")
 out = root / "forge-gui-android/assets"
 out.mkdir(parents=True, exist_ok=True)
 build = os.environ.get("GITHUB_RUN_NUMBER", "local")
