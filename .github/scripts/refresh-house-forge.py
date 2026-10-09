@@ -71,6 +71,16 @@ text = empower.read_text()
 assert text.count('"+1/+1 counter"') == 1
 empower.write_text(text.replace('"+1/+1 counter"', '"loyalty counter"'))
 
+# Empower Jace is a beneficial action. Upstream's API registry has no AI
+# handler, causing the AI to reject otherwise playable FRA/FRC effects.
+# Register the standard positive-action handler until dedicated valuation ships.
+ai_registry = ROOT / 'forge-ai/src/main/java/forge/ai/SpellApiToAi.java'
+text = ai_registry.read_text()
+anchor = '            .put(ApiType.Endure, EndureAi.class)'
+assert text.count(anchor) == 1, 'Cannot find stable API registry insertion point'
+text = text.replace(anchor, anchor + '\n            .put(ApiType.Empower, AlwaysPlayAi.class)')
+ai_registry.write_text(text)
+
 # Existing platform renderers still call these binary interfaces.
 card = ROOT / 'forge-game/src/main/java/forge/game/card/Card.java'
 text = card.read_text()
