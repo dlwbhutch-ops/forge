@@ -1,5 +1,7 @@
 import com.housecommander.forgebridge.*;
 import forge.ai.ComputerUtil;
+import forge.ai.SpellApiToAi;
+import forge.ai.ability.CannotPlayAi;
 import forge.deck.Deck;
 import forge.game.*;
 import forge.game.ability.*;
@@ -34,6 +36,9 @@ public final class HouseEmpowerSmoke {
     public static void main(String[] args) throws Exception {
         try {
             HouseForgeRuntime.initialize(Path.of(args[0]).toFile(), "HOUSE Empower regression");
+            require(!(SpellApiToAi.Converter.get(ApiType.Empower) instanceof CannotPlayAi),
+                    "Empower Jace spells cannot be cast by the AI");
+            System.out.println("EMPOWER_JACE_AI_HANDLER_PASS");
             Deck deck = ForgeDeckLoader.load(Path.of(args[1]).toFile());
             List<RegisteredPlayer> registered = new ArrayList<>();
             for (int i = 0; i < 4; i++) registered.add(RegisteredPlayer.forCommander(deck)
