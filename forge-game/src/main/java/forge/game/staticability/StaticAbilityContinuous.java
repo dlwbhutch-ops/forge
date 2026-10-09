@@ -1012,7 +1012,10 @@ public final class StaticAbilityContinuous {
 
         final String[] strngs = params.get("Affected").split(",");
 
-        for (Player p : controller.getGame().getPlayersInTurnOrder()) {
+        // The affected set is independent of turn direction. Resolving turn order here
+        // can reenter continuous-effect evaluation through TurnReversed static abilities.
+        // Use live players in registration order and avoid that recursive rules query.
+        for (Player p : controller.getGame().getPlayers()) {
             if (p.isValid(strngs, controller, hostCard, stAb)) {
                 players.add(p);
             }
