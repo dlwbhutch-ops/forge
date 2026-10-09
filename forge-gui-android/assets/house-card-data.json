@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-08",
-  "sourceCommit": "0fa862eb1c85d41d656f7a73ec6ad223fd3417d3",
+  "date": "2026-10-09",
+  "sourceCommit": "55496c761eab0f0df2f58b08a55614dc48e448c0",
   "enginePending": 0,
   "categories": [
     {
@@ -19,7 +19,20 @@
       "revision": "769d63f399629161d97bb4190bdd8777c060d3eb"
     }
   ],
-  "engineSourceCommit": "0fa862eb1c85d41d656f7a73ec6ad223fd3417d3",
+  "engineSourceCommit": "55496c761eab0f0df2f58b08a55614dc48e448c0",
   "cardScripts": 34074,
-  "tokenScripts": 855
+  "tokenScripts": 855,
+  "releaseSets": [
+    "FRA",
+    "FRC"
+  ],
+  "releaseRules": [
+    "Empower Jace",
+    "Heartwood",
+    "Prepare",
+    "Flashback",
+    "Combat 506.6"
+  ],
+  "artStyle": "hand-drawn anime realism; set-accurate artwork",
+  "auditStatus": "pending-runtime-audit"
 }
