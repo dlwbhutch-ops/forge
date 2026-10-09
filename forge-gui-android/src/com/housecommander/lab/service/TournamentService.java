@@ -674,34 +674,7 @@ public final class TournamentService extends Service {
     }
 
     private String validateWinner(List<DeckSpec> decks, String winner) {
-        if (winner == null || winner.trim().isEmpty()) {
-            throw new IllegalStateException("Forge returned an empty winner");
-        }
-
-        String canonicalWinner = Names.canonical(winner);
-        for (DeckSpec d : decks) {
-            if (Names.canonical(d.deck()).equals(canonicalWinner)) {
-                return d.deck();
-            }
-            if (Names.canonical(d.engineName()).equals(canonicalWinner)) {
-                return d.deck();
-            }
-
-            String fileName = new File(d.dck()).getName();
-            if (Names.canonical(fileName).equals(canonicalWinner)) {
-                return d.deck();
-            }
-
-            int dot = fileName.lastIndexOf('.');
-            String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
-            if (Names.canonical(stem).equals(canonicalWinner)) {
-                return d.deck();
-            }
-        }
-
-        throw new IllegalStateException(
-                "Winner returned by Forge is not a member of this pod: " + winner
-        );
+        return com.housecommander.core.WinnerIdentity.resolve(decks, winner);
     }
 
     private File logFile(String group, int sequence, PodSpec pod) throws IOException {
