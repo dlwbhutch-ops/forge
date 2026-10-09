@@ -5,6 +5,14 @@ cd "$task_root"
 mvn -q -pl forge-gui -am org.apache.maven.plugins:maven-dependency-plugin:3.1.2:build-classpath -Dmdep.outputFile=target/house-runtime-classpath.txt
 cp forge-gui/target/house-runtime-classpath.txt house-smoke-classpath.txt
 runtime_classpath="forge-gui/target/classes:$(cat house-smoke-classpath.txt)"
+# CardDataUpdates is included in the HOUSE core smoke javac inputs and uses Gson.
+# The GUI dependency classpath does not include Android-only Gson transitives.
+gson_jar="$(find "$HOME/.m2/repository/com/google/code/gson/gson" -type f -name 'gson-*.jar' 2>/dev/null | sort -V | tail -n 1)"
+if [[ -z "$gson_jar" || ! -f "$gson_jar" ]]; then
+  echo "HOUSE smoke cannot locate the Gson JAR installed by Android Maven build" >&2
+  exit 1
+fi
+runtime_classpath="$runtime_classpath:$gson_jar"
 python3 - <<'PY'
 from pathlib import Path
 import zipfile
