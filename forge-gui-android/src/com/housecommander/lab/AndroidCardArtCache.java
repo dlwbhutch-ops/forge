@@ -48,7 +48,9 @@ public final class AndroidCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
-        if (TokenArtResolver.useIllustration(card)) return tokenBitmap(card, maxWidth, maxHeight, card.tapped());
+        if (TokenArtResolver.useIllustration(card)
+                && (paintedTokens.find(card) != null || card.imageUrl().isEmpty()))
+            return tokenBitmap(card, maxWidth, maxHeight, card.tapped());
         if (card == null || card.imageUrl().isEmpty()) {
             return null;
         }
@@ -80,7 +82,9 @@ public final class AndroidCardArtCache {
             int maxHeight,
             Runnable onReady
     ) {
-        if (TokenArtResolver.useIllustration(card)) return tokenBitmap(card, maxWidth, maxHeight, false);
+        if (TokenArtResolver.useIllustration(card)
+                && (paintedTokens.find(card) != null || card.imageUrl().isEmpty()))
+            return tokenBitmap(card, maxWidth, maxHeight, false);
         if (card == null || card.imageUrl().isEmpty()) {
             return null;
         }
