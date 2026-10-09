@@ -22,6 +22,7 @@ public final class AndroidCardArtCache {
     private static final int MEMORY_CACHE_KB = 32 * 1024;
 
     private final Context context;
+    private final PaintedTokenArtPack paintedTokens;
     private final ExecutorService loader = Executors.newFixedThreadPool(3, runnable -> {
         Thread thread = new Thread(runnable, "HOUSE-Card-Art");
         thread.setDaemon(true);
@@ -38,6 +39,7 @@ public final class AndroidCardArtCache {
 
     public AndroidCardArtCache(Context context) {
         this.context = context.getApplicationContext();
+        this.paintedTokens = new PaintedTokenArtPack(this.context);
     }
 
     public Bitmap cardBitmap(
@@ -95,6 +97,14 @@ public final class AndroidCardArtCache {
         return null;
     }
 
+    public int paintedTokenCount() { return paintedTokens.size(); }
+
+    public int importPaintedTokenPack(android.net.Uri zip) throws java.io.IOException {
+        int count = paintedTokens.install(context, zip);
+        bitmaps.evictAll();
+        return count;
+    }
+
     public void shutdown() {
         loader.shutdownNow();
         pending.clear();
@@ -105,8 +115,12 @@ public final class AndroidCardArtCache {
         String key="token|"+TokenArtResolver.identity(card)+"|"+tapped+"|"+width+"x"+height;
         Bitmap ready=bitmaps.get(key);
         if(ready!=null&&!ready.isRecycled())return ready;
-        Bitmap art=Bitmap.createBitmap(200,280,Bitmap.Config.ARGB_8888);
-        TokenArtResolver.paint(card,new AndroidTokenPainter(new Canvas(art)));
+        File paintedFile = paintedTokens.find(card);
+        Bitmap art = paintedFile == null ? null : BitmapFactory.decodeFile(paintedFile.getAbsolutePath());
+        if (art == null) {
+            art=Bitmap.createBitmap(200,280,Bitmap.Config.ARGB_8888);
+            TokenArtResolver.paint(card,new AndroidTokenPainter(new Canvas(art)));
+        }
         Bitmap display=tapped?rotate90(art):art;
         Bitmap result=scaleInside(display,width,height);
         if(display!=result)display.recycle();
