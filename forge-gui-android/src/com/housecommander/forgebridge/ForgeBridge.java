@@ -1167,6 +1167,11 @@ public final class ForgeBridge {
         private final Set<String> reportedErrors = new HashSet<String>();
         private final SpectatorCapturePolicy capturePolicy;
 
+        // Preserve the legacy reflective smoke-test and integration constructor.
+        private LiveStateRecorder(Game game, String logPath) {
+            this(game, logPath, false);
+        }
+
         private LiveStateRecorder(Game game, String logPath, boolean pilot) {
             this.game = game;
             this.capturePolicy = new SpectatorCapturePolicy(pilot);
