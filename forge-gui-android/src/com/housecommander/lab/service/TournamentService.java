@@ -398,11 +398,8 @@ public final class TournamentService extends Service {
                     store.save(state);
                     updateNotification(state.lastMessage);
 
-                    GameOutcome outcome = engine.runCommanderGame(
-                            decks,
-                            log,
-                            HARD_TIMEOUT_SECONDS,
-                            STALL_TIMEOUT_SECONDS
+                    GameOutcome outcome = runGameWithTimeoutReplay(
+                            engine, store, control, decks, log, g, i + 1, podCount
                     );
                     String winner = validateWinner(decks, outcome.winner());
 
@@ -466,6 +463,57 @@ public final class TournamentService extends Service {
         } finally {
             control.releaseWorker();
             finishWorker(startId);
+        }
+    }
+
+    /**
+     * An unfinished Forge match is never a scored result. Replay a timed-out
+     * match at most once using the exact same participants; leave both literal
+     * logs on disk. The current pod is advanced only after a verified winner.
+     * Failure to stop the first Forge worker poisons the engine and prevents
+     * unsafe concurrent retries.
+     */
+    private GameOutcome runGameWithTimeoutReplay(
+            ForgeEngineAdapter engine,
+            StateStore store,
+            GameCancellation control,
+            List<DeckSpec> decks,
+            File initialLog,
+            int gauntlet,
+            int podNumber,
+            int podCount
+    ) throws Exception {
+        File attemptLog = initialLog;
+        for (int retriesUsed = 0; ; retriesUsed++) {
+            control.check();
+            try {
+                return engine.runCommanderGame(
+                        decks,
+                        attemptLog,
+                        HARD_TIMEOUT_SECONDS,
+                        STALL_TIMEOUT_SECONDS
+                );
+            } catch (java.util.concurrent.TimeoutException timeout) {
+                if (!TournamentRetryPolicy.replay(timeout, retriesUsed)) {
+                    throw timeout;
+                }
+                control.check();
+                if (!engine.isAvailable()) {
+                    throw new IllegalStateException(
+                            "Forge worker could not safely restart after timeout: "
+                                    + engine.status(), timeout);
+                }
+                attemptLog = new File(initialLog.getParentFile(),
+                        initialLog.getName().replace(".log", "_retry1.log"));
+                RunState retryState = store.load();
+                retryState.status = "RUNNING";
+                retryState.lastLogPath = relativeLogPath(attemptLog);
+                retryState.lastMessage = "G" + gauntlet + " pod " + podNumber
+                        + "/" + podCount
+                        + " • timed-out game had no winner; replaying once";
+                store.save(retryState);
+                updateNotification(retryState.lastMessage);
+            }
         }
     }
 
