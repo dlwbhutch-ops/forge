@@ -46,6 +46,10 @@ jobs:
           path: tmp/jvmdg/tools
           key: jvmdg-tools-${{ hashFiles('forge-gui-ios/pipeline/ios-pipeline.sh') }}
 
+      - name: Synchronize HOUSE Reality Fracture pinned Forge source
+        if: github.ref_name == 'feature/reality-fracture-complete-20261009' || github.head_ref == 'feature/reality-fracture-complete-20261009'
+        run: python3 .github/scripts/refresh-house-forge.py
+
       - name: Run iOS compatibility audit
         run: bash forge-gui-ios/pipeline/ios-pipeline.sh audit
 
