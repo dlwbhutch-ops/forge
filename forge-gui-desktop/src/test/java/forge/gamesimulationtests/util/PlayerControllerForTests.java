@@ -21,6 +21,7 @@ import forge.game.*;
 import forge.game.ability.AbilityUtils;
 import forge.game.ability.effects.RollDiceEffect;
 import forge.game.card.*;
+import forge.game.card.sticker.Sticker;
 import forge.game.combat.Combat;
 import forge.game.combat.CombatUtil;
 import forge.game.cost.*;
@@ -733,6 +734,23 @@ public class PlayerControllerForTests extends PlayerController {
     public List<Card> chooseCardsForZoneChange(ZoneType destination, List<ZoneType> origin, SpellAbility sa, CardCollection fetchList, int min, int max, DelayedReveal delayedReveal, String selectPrompt, Player decider) {
         // this isn't used
         return null;
+    }
+
+    // Keep the legacy desktop test harness compatible with the pinned Forge
+    // sticker interfaces. Tests make deterministic harmless choices.
+    @Override
+    public Sticker chooseSticker(List<Sticker> options, Card target, SpellAbility sa, boolean optional) {
+        return options == null || options.isEmpty() ? null : options.get(0);
+    }
+
+    @Override
+    public Card chooseCardToKeepStickers(CardCollectionView options) {
+        return options == null || options.isEmpty() ? null : options.get(0);
+    }
+
+    @Override
+    public int chooseStickerNamePosition(Sticker sticker, Card target) {
+        return 0;
     }
 
     @Override
