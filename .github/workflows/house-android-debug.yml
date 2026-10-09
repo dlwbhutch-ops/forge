@@ -14,6 +14,7 @@ on:
       - 'house-unified-release-v017-*'
       - 'house-unified-release-v018-*'
       - 'house-broadcast-*'
+      - 'fix/house-winner-alias-*'
   workflow_dispatch:
 
 jobs:
