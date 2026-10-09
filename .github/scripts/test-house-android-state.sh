@@ -13,5 +13,11 @@ fi
     forge-gui-android/src/com/housecommander/lab/state/RunState.java \
     forge-gui-android/src/com/housecommander/lab/state/GameLogFiles.java \
     forge-gui-android/src/com/housecommander/lab/state/GameCancellation.java \
+    forge-gui-android/src/com/housecommander/forgebridge/PhaseProgressClock.java \
+    forge-gui-android/src/com/housecommander/forgebridge/PhaseProgressClockSelfTest.java \
+    forge-gui-android/src/com/housecommander/lab/service/TournamentRetryPolicy.java \
+    forge-gui-android/src/com/housecommander/lab/service/TournamentRetryPolicySelfTest.java \
     .github/scripts/HouseAndroidStateSmoke.java
 java -cp "$task_classes" HouseAndroidStateSmoke
+java -cp "$task_classes" com.housecommander.forgebridge.PhaseProgressClockSelfTest
+java -cp "$task_classes" com.housecommander.lab.service.TournamentRetryPolicySelfTest
