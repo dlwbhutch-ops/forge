@@ -15,6 +15,7 @@ on:
       - 'house-unified-release-v018-*'
       - 'house-broadcast-*'
       - 'fix/house-attack-worker-20261008'
+      - 'fix/house-spectator-cost-20261009'
   workflow_dispatch:
 
 jobs:
@@ -36,6 +37,14 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+
+      - name: Verify tournament spectator capture policy
+        run: |
+          mkdir -p /tmp/house-spectator-checks
+          javac -encoding UTF-8 -d /tmp/house-spectator-checks \
+            forge-gui-android/src/com/housecommander/forgebridge/SpectatorCapturePolicy.java \
+            forge-gui-android/src/com/housecommander/forgebridge/SpectatorCapturePolicySelfTest.java
+          java -cp /tmp/house-spectator-checks com.housecommander.forgebridge.SpectatorCapturePolicySelfTest
 
       - name: Verify pod winner identity and dual-faced commander aliases
         run: bash .github/scripts/test-house-winner-identity.sh
