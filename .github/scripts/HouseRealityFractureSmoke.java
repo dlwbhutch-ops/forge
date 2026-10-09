@@ -50,7 +50,7 @@ public final class HouseRealityFractureSmoke {
         Path editions = Path.of(args[0], "res", "editions");
         Set<String> fra = names(editions.resolve("Reality Fracture.txt"));
         Set<String> frc = names(editions.resolve("Reality Fracture Commander.txt"));
-        if (fra.size() < 200 || frc.size() < 90) {
+        if (fra.size() < 250 || frc.size() < 80) {
             throw new AssertionError("Incomplete FRA/FRC edition inventory: FRA=" + fra.size() + " FRC=" + frc.size());
         }
 
