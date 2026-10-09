@@ -101,4 +101,16 @@ text = text.replace(anchor, '''    public int getCrackOverlayInt() {
     }
 ''' + anchor)
 view.write_text(text)
+# HOUSE: static continuous effects must enumerate live players without asking for
+# turn direction. getPlayersInTurnOrder() invokes TurnReversed abilities, which
+# calls Card.getStaticAbilities(), reentering this exact continuous calculation.
+continuous = ROOT / 'forge-game/src/main/java/forge/game/staticability/StaticAbilityContinuous.java'
+text = continuous.read_text()
+old = '        for (Player p : controller.getGame().getPlayersInTurnOrder()) {'
+assert text.count(old) == 1, 'Unexpected Forge continuous affected-player selector'
+text = text.replace(old, '''        // The affected set does not depend on turn direction. Avoid recursion
+        // through TurnReversed -> Card.getStaticAbilities -> continuous layers.
+        for (Player p : controller.getGame().getPlayers()) {''')
+continuous.write_text(text)
+
 print('HOUSE_FORGE_REFRESH_PASS ' + pin)
