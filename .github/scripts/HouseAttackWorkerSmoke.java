@@ -86,7 +86,7 @@ public final class HouseAttackWorkerSmoke {
             stop.countDown(); blocked.join();
             String diagnostic = String.join("\n", HouseStallDiagnostics.append(new String[]{"HOUSE_ERROR=STALL_TIMEOUT"}));
             if (!diagnostic.contains("HOUSE-Forge-Game") || !diagnostic.contains("HouseAttackWorkerSmoke")
-                    || !diagnostic.contains("HOUSE_APK_BUILD=195")) throw new AssertionError(diagnostic);
+                    || !diagnostic.contains("HOUSE_APK_BUILD=196")) throw new AssertionError(diagnostic);
             HouseStallDiagnostics.reset();
             if (String.join("\n", HouseStallDiagnostics.append(null)).contains("HOUSE_WORKER_STACK=")) {
                 throw new AssertionError("Previous game diagnostics leaked into a new game");

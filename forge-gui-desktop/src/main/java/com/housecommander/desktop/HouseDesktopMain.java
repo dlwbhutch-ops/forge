@@ -165,6 +165,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
+        header.add(DesktopCardUpdates.button(this), BorderLayout.EAST);
         header.add(engineStatus, BorderLayout.SOUTH);
         root.add(header, BorderLayout.NORTH);
 

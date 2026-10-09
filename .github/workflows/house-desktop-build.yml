@@ -26,7 +26,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Bundle Forge rules resources for desktop
-        run: python3 .github/scripts/package-house-runtime.py
+        run: |
+          python3 .github/scripts/refresh-house-forge.py
+          python3 .github/scripts/package-house-runtime.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
