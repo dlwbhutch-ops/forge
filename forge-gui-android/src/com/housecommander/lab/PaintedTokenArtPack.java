@@ -24,6 +24,7 @@ public final class PaintedTokenArtPack {
     private static final long MAX_BYTES = 20L * 1024L * 1024L;
     private final File root;
     private final Map<String, List<Artwork>> artworks = new HashMap<>();
+    private final Map<String, Artwork> byTokenId = new HashMap<>();
     private int count;
 
     static final class Manifest {
@@ -33,6 +34,7 @@ public final class PaintedTokenArtPack {
 
     static final class Artwork {
         String id;
+        String tokenId;
         String name;
         String filename;
         Integer power;
@@ -55,6 +57,12 @@ public final class PaintedTokenArtPack {
 
     public synchronized File find(LiveGameState.CardState card) {
         if (card == null || !card.token()) return null;
+        String key = card.imageKey().replaceFirst("^t:", "");
+        Artwork exact = byTokenId.get(key);
+        if (exact != null && exact.filename != null) {
+            File file = new File(root, exact.filename);
+            if (file.isFile()) return file;
+        }
         List<Artwork> candidates = artworks.get(normalize(card.name()));
         if (candidates == null || candidates.isEmpty()) return null;
         Artwork choice = null;
@@ -77,6 +85,7 @@ public final class PaintedTokenArtPack {
 
     public synchronized void reload() {
         artworks.clear();
+        byTokenId.clear();
         count = 0;
         File manifestFile = new File(root, "manifest.json");
         if (!manifestFile.isFile()) return;
@@ -89,9 +98,10 @@ public final class PaintedTokenArtPack {
                         || !artwork.filename.matches("art/[a-z0-9_]+\\.webp")) continue;
                 if (!new File(root, artwork.filename).isFile()) continue;
                 artworks.computeIfAbsent(normalize(artwork.name), k -> new ArrayList<>()).add(artwork);
+                if (artwork.tokenId != null && !artwork.tokenId.isEmpty()) byTokenId.put(artwork.tokenId, artwork);
                 count++;
             }
-        } catch (Exception ignored) { artworks.clear(); count = 0; }
+        } catch (Exception ignored) { artworks.clear(); byTokenId.clear(); count = 0; }
     }
 
     public synchronized int install(Context context, Uri uri) throws IOException {
