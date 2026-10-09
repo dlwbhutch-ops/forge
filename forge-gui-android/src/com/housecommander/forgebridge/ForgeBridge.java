@@ -24,6 +24,8 @@ import forge.game.card.Card;
 import forge.game.card.CounterType;
 import forge.game.combat.Combat;
 import forge.game.event.Event;
+import forge.game.event.GameEventTurnBegan;
+import forge.game.event.GameEventTurnPhase;
 import forge.game.phase.PhaseHandler;
 import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.player.Player;
@@ -76,6 +78,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class ForgeBridge {
     private static final String HOUSE_BRIDGE_VERSION = HouseForgeRuntime.VERSION;
     private static final long WATCHDOG_POLL_MILLIS = 1000L;
+    // Priority events alone do not prove a turn or phase has advanced.
+    private static final long PHASE_STAGNATION_SECONDS = 600L;
     private static final long INTERRUPT_GRACE_SECONDS = 2L;
     private static final long GAMEOVER_GRACE_SECONDS = 3L;
 
@@ -405,6 +409,36 @@ public final class ForgeBridge {
                  */
                 if (pilotSeat >= 0 && PilotDecisionBridge.hasPending()) {
                     continue;
+                }
+
+                long samePhaseNs = heartbeat.phaseStationaryNanos(nowNs);
+                if (heartbeat.hasObservedPhase()
+                        && samePhaseNs >= TimeUnit.SECONDS.toNanos(
+                                Math.min(PHASE_STAGNATION_SECONDS, hardTimeoutSeconds))) {
+                    elapsedMs = elapsedMillis(startedNs);
+                    ProgressSnapshot current = trySnapshot(game);
+                    TimeoutException failure = new TimeoutException(
+                            "Forge Commander game did not advance to another turn/phase for "
+                                    + TimeUnit.NANOSECONDS.toSeconds(samePhaseNs)
+                                    + " seconds despite incoming events ["
+                                    + heartbeat.describe()
+                                    + "; "
+                                    + snapshotText(current)
+                                    + "]"
+                    );
+                    abortGame(future, executor, game, failure, "phase stagnation timeout");
+                    writeFailureLog(
+                            game,
+                            logPath,
+                            elapsedMs,
+                            failure,
+                            "HOUSE_ERROR=PHASE_STALL_TIMEOUT",
+                            "HOUSE_PHASE_STALL_SECONDS=" + PHASE_STAGNATION_SECONDS,
+                            "HOUSE_HARD_TIMEOUT_SECONDS=" + hardTimeoutSeconds,
+                            "HOUSE_WATCHDOG=" + heartbeat.describe(),
+                            "HOUSE_LAST_PROGRESS=" + snapshotText(current)
+                    );
+                    throw failure;
                 }
 
                 long stalledNs = nowNs - heartbeat.lastActivityNs();
@@ -1258,19 +1292,46 @@ public final class ForgeBridge {
     private static final class ProgressHeartbeat {
         private final AtomicLong lastActivityNs;
         private final AtomicLong eventCount = new AtomicLong(0L);
+        private final AtomicLong priorityEvents = new AtomicLong(0L);
+        private final PhaseProgressClock phaseClock;
         private volatile String lastEvent = "<none>";
+        private volatile int turn = 0;
 
         private ProgressHeartbeat(long startedNs) {
-            this.lastActivityNs = new AtomicLong(startedNs);
+            lastActivityNs = new AtomicLong(startedNs);
+            phaseClock = new PhaseProgressClock(startedNs);
         }
 
         @Subscribe
         public void onGameEvent(Event event) {
+            long nowNs = System.nanoTime();
             lastEvent = event == null
                     ? "<null>"
                     : event.getClass().getSimpleName();
             eventCount.incrementAndGet();
-            lastActivityNs.set(System.nanoTime());
+            lastActivityNs.set(nowNs);
+
+            if (event instanceof GameEventTurnBegan) {
+                GameEventTurnBegan began = (GameEventTurnBegan) event;
+                turn = began.turnNumber();
+                phaseClock.observe("turn=" + turn + ",phase=TURN_BEGIN", nowNs);
+            } else if (event instanceof GameEventTurnPhase) {
+                GameEventTurnPhase changed = (GameEventTurnPhase) event;
+                phaseClock.observe("turn=" + turn
+                        + ",phase=" + changed.phase()
+                        + ",active=" + (changed.playerTurn() == null
+                        ? "<unknown>" : changed.playerTurn().getName()), nowNs);
+            } else if (event instanceof forge.game.event.GameEventPlayerPriority) {
+                priorityEvents.incrementAndGet();
+            }
+        }
+
+        private boolean hasObservedPhase() {
+            return phaseClock.hasPhase();
+        }
+
+        private long phaseStationaryNanos(long nowNs) {
+            return phaseClock.stationaryNanos(nowNs);
         }
 
         private long lastActivityNs() {
@@ -1278,15 +1339,15 @@ public final class ForgeBridge {
         }
 
         private String describe() {
+            long nowNs = System.nanoTime();
             long idleMs = TimeUnit.NANOSECONDS.toMillis(
-                    Math.max(0L, System.nanoTime() - lastActivityNs.get())
+                    Math.max(0L, nowNs - lastActivityNs.get())
             );
-            return "events="
-                    + eventCount.get()
-                    + ",lastEvent="
-                    + sanitize(lastEvent)
-                    + ",idleMs="
-                    + idleMs;
+            return "events=" + eventCount.get()
+                    + ",lastEvent=" + sanitize(lastEvent)
+                    + ",idleMs=" + idleMs
+                    + ",priorityEvents=" + priorityEvents.get()
+                    + "," + sanitize(phaseClock.describe(nowNs));
         }
     }
 
