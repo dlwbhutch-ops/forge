@@ -27,6 +27,10 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Synchronize the pinned HOUSE Forge engine and set data
+        if: github.ref_name == 'feature/reality-fracture-complete-20261009' || github.head_ref == 'feature/reality-fracture-complete-20261009'
+        run: python3 .github/scripts/refresh-house-forge.py
+
       - name: Install old maven (3.8.1)
         run: |
           curl -o apache-maven-3.8.1-bin.tar.gz https://archive.apache.org/dist/maven/maven-3/3.8.1/binaries/apache-maven-3.8.1-bin.tar.gz
