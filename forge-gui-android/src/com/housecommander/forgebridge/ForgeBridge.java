@@ -306,6 +306,7 @@ public final class ForgeBridge {
                 "HOUSE Commander Lab"
         );
         final Game game = match.createGame();
+        HouseStallDiagnostics.reset();
         liveGameState = LiveGameState.starting();
         snapshotError = "";
         SpectatorPlayback.reset(liveGameState);
@@ -730,6 +731,7 @@ public final class ForgeBridge {
             Throwable originalFailure,
             String reason
     ) {
+        HouseStallDiagnostics.capture(reason);
         PilotDecisionBridge.cancel();
         /*
          * First ask the worker to stop using interruption only. This avoids
@@ -1340,6 +1342,7 @@ public final class ForgeBridge {
             Throwable originalFailure,
             String... markers
     ) {
+        markers = HouseStallDiagnostics.append(markers);
         try {
             if (ENGINE_POISONED.get()) {
                 writeMinimalFailureLog(logPath, elapsedMs, new IllegalStateException(poisonReason), markers);
