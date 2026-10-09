@@ -312,7 +312,7 @@ public final class ForgeBridge {
         SpectatorPlayback.reset(liveGameState);
         final long startedNs = System.nanoTime();
         final ProgressHeartbeat heartbeat = new ProgressHeartbeat(startedNs);
-        final LiveStateRecorder liveRecorder = new LiveStateRecorder(game, logPath);
+        final LiveStateRecorder liveRecorder = new LiveStateRecorder(game, logPath, pilotSeat >= 0);
         game.subscribeToEvents(heartbeat);
         game.subscribeToEvents(liveRecorder);
 
@@ -1161,16 +1161,15 @@ public final class ForgeBridge {
      * event thread. This avoids racing the mutable engine from Swing/Android.
      */
     private static final class LiveStateRecorder {
-        private static final long MIN_CAPTURE_NS = TimeUnit.MILLISECONDS.toNanos(75L);
-
         private final Game game;
         private final AtomicLong sequence = new AtomicLong(1L);
         private final File diagnosticLog;
         private final Set<String> reportedErrors = new HashSet<String>();
-        private long lastCaptureNs;
+        private final SpectatorCapturePolicy capturePolicy;
 
-        private LiveStateRecorder(Game game, String logPath) {
+        private LiveStateRecorder(Game game, String logPath, boolean pilot) {
             this.game = game;
+            this.capturePolicy = new SpectatorCapturePolicy(pilot);
             diagnosticLog = new File(logPath + ".viewer.log");
             if (diagnosticLog.isFile() && !diagnosticLog.delete()) {
                 System.err.println("HOUSE viewer could not clear diagnostics from the prior attempt");
@@ -1182,42 +1181,19 @@ public final class ForgeBridge {
             String eventName = event == null
                     ? "<null>"
                     : event.getClass().getSimpleName();
-            long now = System.nanoTime();
-            boolean force = eventName.contains("Phase")
-                    || eventName.contains("Priority")
-                    || eventName.contains("PlayerLost")
-                    || eventName.contains("Turn")
-                    || eventName.contains("Lives")
-                    || eventName.contains("Counters")
-                    || eventName.contains("ChangeZone")
-                    || eventName.contains("Tapped")
-                    || eventName.contains("Combat")
-                    || eventName.contains("Spell")
-                    || eventName.contains("Ability")
-                    || eventName.contains("Damage")
-                    || eventName.contains("Draw")
-                    || eventName.contains("Discard")
-                    || eventName.contains("Sacrifice")
-                    || eventName.contains("Destroyed")
-                    || eventName.contains("Started")
-                    || eventName.contains("Finished")
-                    || eventName.contains("Outcome");
-
-            if (force || now - lastCaptureNs >= MIN_CAPTURE_NS) {
+            if (capturePolicy.shouldCapture(eventName, System.nanoTime())) {
                 publish(eventName, false);
-                lastCaptureNs = now;
             }
         }
 
         private void publish(String eventName, boolean force) {
+            final long beganNs = System.nanoTime();
             try {
                 LiveGameState next = captureLiveState(
                         game,
                         sequence.incrementAndGet(),
                         eventName,
-                        // Cleanup can emit outcome events after a timeout or stop.
-                        // Only the successful, validated return path may announce
-                        // a result; ordinary events still update the live board.
+                        // Only the validated successful return may publish a winner.
                         force && "GAME_COMPLETE".equals(eventName)
                 );
                 liveGameState = next;
@@ -1239,13 +1215,15 @@ public final class ForgeBridge {
                     );
                     SpectatorPlayback.record(liveGameState);
                 }
+            } finally {
+                capturePolicy.captureCompleted(System.nanoTime() - beganNs, System.nanoTime());
             }
         }
 
         private void reportCaptureError(String eventName, Throwable error) {
             snapshotError = error.getClass().getName() + ": " + safeMessage(error);
             if (reportedErrors.size() >= 3 || !reportedErrors.add(snapshotError)) return;
-            // Keep viewer failures separate from Forge's authoritative winner/audit log.
+            // Viewer diagnostics are kept separate from authoritative game logs.
             try (PrintWriter out = new PrintWriter(new FileWriter(diagnosticLog, reportedErrors.size() > 1))) {
                 out.println("HOUSE_VIEWER_ERROR event=" + eventName + " " + snapshotError);
                 error.printStackTrace(out);
