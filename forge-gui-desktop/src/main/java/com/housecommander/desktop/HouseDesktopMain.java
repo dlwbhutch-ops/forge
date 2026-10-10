@@ -161,7 +161,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JLabel title = new JLabel("HOUSE Commander Lab");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         JLabel version = new JLabel(
-                "Desktop 0.17 • Unified Distribution • Play + Watch + Decks + Tournaments"
+                "Desktop 0.18 • Reality Fracture • Play + Watch + Decks + Tournaments"
         );
         header.add(title, BorderLayout.NORTH);
         header.add(version, BorderLayout.CENTER);
@@ -274,7 +274,15 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         controls.add(playback, BorderLayout.CENTER);
         JButton preferences = new JButton("Viewer settings");
         preferences.addActionListener(event -> showBroadcastSettings());
-        controls.add(preferences, BorderLayout.SOUTH);
+        JPanel artworkControls = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0));
+        artworkControls.add(preferences);
+        JButton importTokens = new JButton("Import hand-drawn token ZIP");
+        importTokens.addActionListener(event -> importPaintedTokens());
+        artworkControls.add(importTokens);
+        JButton gallery = new JButton("Token art gallery");
+        gallery.addActionListener(event -> showPaintedTokenGallery());
+        artworkControls.add(gallery);
+        controls.add(artworkControls, BorderLayout.SOUTH);
         panel.add(controls, BorderLayout.NORTH);
 
         watchBoard.setBorder(BorderFactory.createTitledBorder("Literal Forge Battlefield"));
@@ -1085,13 +1093,86 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JOptionPane.showMessageDialog(this, scroll, player.name(), JOptionPane.PLAIN_MESSAGE);
     }
 
+    private void importPaintedTokens() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import HOUSE hand-drawn PNG token art pack");
+        chooser.setFileFilter(new FileNameExtensionFilter("HOUSE token artwork ZIP (*.zip)", "zip"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        try {
+            int count = cardArtCache.importPaintedTokenPack(chooser.getSelectedFile());
+            refreshWatch();
+            JOptionPane.showMessageDialog(this,
+                    count + " hand-drawn illustrations imported. Original Forge token abilities, "
+                    + "loyalty, and power/toughness remain unchanged.",
+                    "HOUSE token art imported", JOptionPane.INFORMATION_MESSAGE);
+        } catch (java.io.IOException error) {
+            JOptionPane.showMessageDialog(this,
+                    "The existing token artwork was preserved.\n" + error.getMessage(),
+                    "HOUSE token import failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void showPaintedTokenGallery() {
+        List<DesktopPaintedTokenPack.GalleryEntry> entries = cardArtCache.paintedTokenGallery();
+        if (entries.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No painted token pack is installed. Choose Import hand-drawn token ZIP "
+                    + "and select the macOS PNG artwork pack.",
+                    "HOUSE token art gallery", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        JPanel panel = new JPanel(new BorderLayout(12, 12));
+        JLabel image = new JLabel("", javax.swing.SwingConstants.CENTER);
+        image.setPreferredSize(new Dimension(370, 450));
+        panel.add(image, BorderLayout.CENTER);
+        JLabel info = new JLabel();
+        JPanel nav = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 12, 4));
+        JButton prev = new JButton("Previous");
+        JButton next = new JButton("Next");
+        nav.add(prev);
+        nav.add(info);
+        nav.add(next);
+        panel.add(nav, BorderLayout.SOUTH);
+        int[] index = {0};
+        Runnable show = () -> {
+            DesktopPaintedTokenPack.GalleryEntry entry = entries.get(index[0]);
+            try {
+                java.awt.image.BufferedImage bitmap = javax.imageio.ImageIO.read(entry.file);
+                if (bitmap == null) throw new java.io.IOException("Not a supported PNG");
+                double ratio = Math.min(370d / bitmap.getWidth(), 450d / bitmap.getHeight());
+                int width = Math.max(1, (int) Math.round(bitmap.getWidth() * ratio));
+                int height = Math.max(1, (int) Math.round(bitmap.getHeight() * ratio));
+                image.setIcon(new ImageIcon(bitmap.getScaledInstance(
+                        width, height, java.awt.Image.SCALE_SMOOTH)));
+            } catch (java.io.IOException ex) {
+                image.setIcon(null);
+                image.setText("Unable to load token artwork");
+            }
+            String label = (index[0] + 1) + "/" + entries.size() + " • " + entry.name
+                    + (entry.galleryOnly ? " • alternate" : "");
+            if (entry.releaseSet != null && !entry.releaseSet.isEmpty())
+                label += " • " + entry.releaseSet;
+            info.setText(label);
+            prev.setEnabled(index[0] > 0);
+            next.setEnabled(index[0] + 1 < entries.size());
+        };
+        prev.addActionListener(event -> { if (index[0] > 0) { index[0]--; show.run(); } });
+        next.addActionListener(event -> {
+            if (index[0] + 1 < entries.size()) { index[0]++; show.run(); }
+        });
+        show.run();
+        JOptionPane.showMessageDialog(this, panel,
+                "Hand-drawn MTG token gallery", JOptionPane.PLAIN_MESSAGE);
+    }
+
     private void showBroadcastSettings() {
         JPanel panel = new JPanel(new GridLayout(0, 1, 6, 6));
         JCheckBox focus = new JCheckBox("Spotlight priority and responses", broadcastSettings.focusResponses);
         JCheckBox arrows = new JCheckBox("Show combat and target arrows", broadcastSettings.showArrows);
         JCheckBox animations = new JCheckBox("Animate eliminations and new cards", broadcastSettings.animate);
         JCheckBox tokens = new JCheckBox("Prefer original token illustrations", broadcastSettings.themedTokens);
-        panel.add(new JLabel(TokenArtResolver.catalogSize() + " bundled token definitions · four fixed seats"));
+        panel.add(new JLabel(TokenArtResolver.catalogSize() + " bundled token definitions · "
+                + cardArtCache.paintedTokenCount() + " imported paintings · four fixed seats"));
         panel.add(focus); panel.add(arrows); panel.add(animations); panel.add(tokens);
         if (JOptionPane.showConfirmDialog(this, panel, "Viewer settings", JOptionPane.OK_CANCEL_OPTION)
                 != JOptionPane.OK_OPTION) return;
