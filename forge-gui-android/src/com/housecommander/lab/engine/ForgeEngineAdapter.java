@@ -151,7 +151,7 @@ public final class ForgeEngineAdapter {
 
         Class<?> bridge = getBridgeClass();
         Method run = bridge.getMethod(
-                "runCommanderGame",
+                "runCommanderGameVerifiedSeat",
                 String[].class,
                 String.class,
                 int.class,
@@ -172,12 +172,8 @@ public final class ForgeEngineAdapter {
             throw new AssertionError("unreachable");
         }
 
-        String winnerName = winner == null ? "" : winner.toString().trim();
-        if (winnerName.isEmpty()) {
-            throw new IllegalStateException(
-                    "STRICT GATE: Forge returned no verified winner. HOUSE will not guess a result."
-            );
-        }
+        String winnerSeat = winner == null ? "" : winner.toString().trim();
+        String winnerName = com.housecommander.core.WinnerIdentity.resolveVerifiedSeat(pod, winnerSeat);
 
         Object forgeVersion;
         try {
@@ -256,7 +252,7 @@ public final class ForgeEngineAdapter {
 
         Class<?> bridge = getBridgeClass();
         Method run = bridge.getMethod(
-                "runCommanderGameWithPilot",
+                "runCommanderGameWithPilotVerifiedSeat",
                 String[].class,
                 int.class,
                 String.class,
@@ -279,13 +275,8 @@ public final class ForgeEngineAdapter {
             throw new AssertionError("unreachable");
         }
 
-        String winnerName = winner == null ? "" : winner.toString().trim();
-        if (winnerName.isEmpty()) {
-            throw new IllegalStateException(
-                    "STRICT GATE: Forge returned no verified winner. "
-                            + "HOUSE will not guess a result."
-            );
-        }
+        String winnerSeat = winner == null ? "" : winner.toString().trim();
+        String winnerName = com.housecommander.core.WinnerIdentity.resolveVerifiedSeat(pod, winnerSeat);
 
         Object forgeVersion;
         try {

@@ -46,9 +46,27 @@ public final class WinnerIdentitySelfTest {
         assertError(pod, "Miles Morales", "not a member");
         assertError(pod, "Random Commander", "not a member");
         assertError(pod, "", "empty winner");
+        // New tournament protocol: seat is derived from the winning Forge
+        // LobbyPlayer object, not from a mutable/translated display label.
+        if (!WinnerIdentity.resolveVerifiedSeat(pod, "HOUSE-VERIFIED-SEAT:0").equals(miles.deck())) {
+            throw new AssertionError("Verified Miles Morales seat did not map to the original roster name");
+        }
+        if (!WinnerIdentity.resolveVerifiedSeat(pod, "HOUSE-VERIFIED-SEAT:3").equals(atraxa.deck())) {
+            throw new AssertionError("Verified last seat mapped to wrong deck");
+        }
+        for (String forged : Arrays.asList("Miles Morales — Ultimate Spider-Man",
+                "HOUSE-VERIFIED-SEAT:4", "HOUSE-VERIFIED-SEAT:-1",
+                "HOUSE-VERIFIED-SEAT:01", "HOUSE-VERIFIED-SEAT:0x1", "HOUSE-VERIFIED-SEAT:")) {
+            try {
+                WinnerIdentity.resolveVerifiedSeat(pod, forged);
+                throw new AssertionError("Unverified winner must fail closed: " + forged);
+            } catch (IllegalStateException expected) {
+                // Expected: no fabricated winner can be checkpointed.
+            }
+        }
         assertError(Arrays.asList(miles, deck("Miles Morales — Ultimate Spider-Man",
                 "Miles Morales — Ultimate Spider-Man", "other/miles2.dck")),
                 "Miles Morales — Ultimate Spider-Man", "Ambiguous Forge winner");
-        System.out.println("PASS: 11 winner-identity regression cases");
+        System.out.println("PASS: winner names plus eight verified-seat regression cases");
     }
 }

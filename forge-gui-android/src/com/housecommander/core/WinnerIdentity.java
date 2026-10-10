@@ -14,6 +14,31 @@ import java.util.List;
 public final class WinnerIdentity {
     private WinnerIdentity() {}
 
+    /**
+     * Strict bridge result produced from Forge's winning LobbyPlayer object,
+     * matched to the exact registered seat. Unlike names, these values never
+     * depend on "//", em dashes, localized names, or deck metadata.
+     */
+    public static String resolveVerifiedSeat(List<DeckSpec> decks, String result) {
+        final String prefix = "HOUSE-VERIFIED-SEAT:";
+        if (result == null || !result.startsWith(prefix)) {
+            throw new IllegalStateException("Forge did not return a verified winning seat: " + result);
+        }
+        if (decks == null || decks.size() < 2) {
+            throw new IllegalStateException("Cannot resolve a verified winner without a valid pod");
+        }
+        String seatText = result.substring(prefix.length());
+        if (!seatText.matches("0|[1-9][0-9]*") || seatText.length() > 2) {
+            throw new IllegalStateException("Malformed Forge winning seat: " + result);
+        }
+        int seat = Integer.parseInt(seatText);
+        if (seat >= decks.size() || decks.get(seat) == null
+                || Names.canonical(decks.get(seat).deck()).isEmpty()) {
+            throw new IllegalStateException("Forge winning seat does not belong to this pod: " + result);
+        }
+        return decks.get(seat).deck();
+    }
+
     public static String resolve(List<DeckSpec> decks, String winner) {
         if (winner == null || winner.trim().isEmpty()) {
             throw new IllegalStateException("Forge returned an empty winner");

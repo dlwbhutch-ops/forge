@@ -14,6 +14,7 @@ on:
       - 'house-unified-release-v017-*'
       - 'house-unified-release-v018-*'
       - 'house-broadcast-*'
+      - 'fix/house-winner-verified-seat-*'
       - 'fix/house-attack-worker-20261008'
       - 'fix/complete-token-gallery-*'
       - 'feature/reality-fracture-*'
