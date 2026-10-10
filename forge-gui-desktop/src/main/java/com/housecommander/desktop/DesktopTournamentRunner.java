@@ -3,6 +3,7 @@ package com.housecommander.desktop;
 import com.housecommander.core.DeckSpec;
 import com.housecommander.core.HousePackage;
 import com.housecommander.core.Names;
+import com.housecommander.core.WinnerIdentity;
 import com.housecommander.core.PodSpec;
 import com.housecommander.core.RosterBuilder;
 import com.housecommander.forgebridge.ForgeBridge;
@@ -100,7 +101,7 @@ public final class DesktopTournamentRunner {
                 PodSpec pod = pack.schedule().get(0);
                 List<DeckSpec> decks = resolvePod(pack, pod);
                 File log = new File(HouseDesktopPaths.logsDir(), "desktop-test-game.log");
-                String winner = ForgeBridge.runCommanderGame(
+                String winner = ForgeBridge.runCommanderGameVerifiedSeat(
                         deckPaths(decks),
                         log.getAbsolutePath(),
                         HARD_TIMEOUT_SECONDS,
@@ -139,7 +140,7 @@ public final class DesktopTournamentRunner {
                 emit(state);
 
                 File log = new File(HouseDesktopPaths.logsDir(), "desktop-pilot-game.log");
-                String winner = ForgeBridge.runCommanderGameWithPilot(
+                String winner = ForgeBridge.runCommanderGameWithPilotVerifiedSeat(
                         deckPaths(decks),
                         0,
                         log.getAbsolutePath(),
@@ -233,7 +234,7 @@ public final class DesktopTournamentRunner {
                         emit(state);
 
                         File log = logFile(g, i + 1, pod);
-                        String winner = ForgeBridge.runCommanderGame(
+                        String winner = ForgeBridge.runCommanderGameVerifiedSeat(
                                 deckPaths(decks),
                                 log.getAbsolutePath(),
                                 HARD_TIMEOUT_SECONDS,
@@ -461,23 +462,10 @@ public final class DesktopTournamentRunner {
         return paths;
     }
 
-    private static String validateWinner(List<DeckSpec> decks, String winner) {
-        String canonical = Names.canonical(winner);
-        for (DeckSpec d : decks) {
-            if (Names.canonical(d.deck()).equals(canonical)
-                    || Names.canonical(d.engineName()).equals(canonical)) {
-                return d.deck();
-            }
-            String fileName = new File(d.dck()).getName();
-            int dot = fileName.lastIndexOf('.');
-            if (dot > 0) {
-                fileName = fileName.substring(0, dot);
-            }
-            if (Names.canonical(fileName.replace('_', ' ')).equals(canonical)) {
-                return d.deck();
-            }
-        }
-        throw new IllegalStateException("Forge winner was not a member of the current pod: " + winner);
+    private static String validateWinner(List<DeckSpec> decks, String verifiedSeat) {
+        // The Forge winner is the registered LobbyPlayer for an exact match seat.
+        // Do not compare two-faced card names, aliases or filenames.
+        return WinnerIdentity.resolveVerifiedSeat(decks, verifiedSeat);
     }
 
     private static File logFile(int gauntlet, int sequence, PodSpec pod) throws IOException {
