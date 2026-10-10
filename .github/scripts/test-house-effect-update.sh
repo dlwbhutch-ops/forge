@@ -15,6 +15,7 @@ javac -encoding UTF-8 -cp "$runtime_classpath" -d house-smoke-classes \
   .github/scripts/HouseAttackWorkerSmoke.java \
   .github/scripts/HouseOutcomePublicationSmoke.java \
   .github/scripts/HouseTurnOrderSmoke.java \
+  .github/scripts/HouseRealityFractureSmoke.java \
   .github/scripts/HouseUpdateCheckSmoke.java
 java -Xmx1400m -cp "$runtime_classpath" HouseEmpowerSmoke house-smoke-runtime \
   forge-gui-android/assets/house19/forge_decks/Garth_One_Eye.dck
@@ -23,5 +24,7 @@ java -Xmx1400m -Djava.util.concurrent.ForkJoinPool.common.parallelism=2 \
   forge-gui-android/assets/house19/forge_decks/Garth_One_Eye.dck
 java -Xmx1400m -cp "$runtime_classpath" HouseOutcomePublicationSmoke house-smoke-runtime
 java -Xmx1400m -cp "$runtime_classpath" HouseTurnOrderSmoke house-smoke-runtime \
+  forge-gui-android/assets/house19/forge_decks/Garth_One_Eye.dck
+java -Xmx1400m -cp "$runtime_classpath" HouseRealityFractureSmoke house-smoke-runtime \
   forge-gui-android/assets/house19/forge_decks/Garth_One_Eye.dck
 java -cp "$runtime_classpath" HouseUpdateCheckSmoke forge-gui-android/assets/house-card-data.json

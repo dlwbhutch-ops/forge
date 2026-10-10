@@ -52,6 +52,7 @@ import java.util.Set;
 
 public final class MainActivity extends Activity {
     private static final int DEFAULT_POD_COUNT = 95;
+    private static final int REQUEST_PAINTED_TOKENS = 4930;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -164,6 +165,23 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_PAINTED_TOKENS) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                try {
+                    int installed = cardArtCache.importPaintedTokenPack(data.getData());
+                    refreshWatchView();
+                    new AlertDialog.Builder(this).setTitle("Painted token art installed")
+                            .setMessage(installed + " hand-drawn token images are now available offline. "
+                                    + "Forge still controls token abilities, counters, and stats.")
+                            .setPositiveButton("OK", null).show();
+                } catch (Exception error) {
+                    new AlertDialog.Builder(this).setTitle("Token art import failed")
+                            .setMessage("Your previous art remains intact. " + error.getMessage())
+                            .setPositiveButton("Close", null).show();
+                }
+            }
+            return;
+        }
         if (libraryController != null
                 && libraryController.handleActivityResult(requestCode, resultCode, data)) {
             return;
@@ -971,13 +989,22 @@ public final class MainActivity extends Activity {
                 android.view.WindowManager.LayoutParams.MATCH_PARENT);
     }
 
+    private void importPaintedTokens() {
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("application/zip");
+        startActivityForResult(picker, REQUEST_PAINTED_TOKENS);
+    }
+
     private void showBroadcastSettings() {
         String[] labels = {"Spotlight priority and responses", "Show combat and target arrows",
                 "Animate eliminations and new cards", "Prefer original token illustrations"};
         boolean[] values = {broadcastSettings.focusResponses, broadcastSettings.showArrows,
                 broadcastSettings.animate, broadcastSettings.themedTokens};
-        new AlertDialog.Builder(this).setTitle("Viewer settings · " + TokenArtResolver.catalogSize() + " tokens")
+        new AlertDialog.Builder(this).setTitle("Viewer settings · " + TokenArtResolver.catalogSize()
+                        + " token scripts · " + cardArtCache.paintedTokenCount() + " painted artworks")
                 .setMultiChoiceItems(labels, values, (dialog, which, checked) -> values[which] = checked)
+                .setNeutralButton("Import painted token art ZIP", (dialog, which) -> importPaintedTokens())
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Save", (dialog, which) -> {
                     broadcastSettings.focusResponses = values[0];
