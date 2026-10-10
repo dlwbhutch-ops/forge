@@ -251,6 +251,23 @@ public final class ForgeBridge {
     }
 
     /**
+     * Runs one literal Commander tournament match and returns a verified roster
+     * seat marker rather than a display name. The winner is identified by the
+     * exact LobbyPlayer object registered to that seat in this game.
+     * Legacy runCommanderGame continues to return its original winner name.
+     */
+    public static String runCommanderGameVerifiedSeat(
+            String[] deckPaths,
+            String logPath,
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds
+    ) throws Exception {
+        return runCommanderGameInternal(
+                deckPaths, logPath, hardTimeoutSeconds, stallTimeoutSeconds, -1, true
+        );
+    }
+
+    /**
      * Runs one literal Commander game with exactly one HOUSE-assisted human seat.
      */
     public static String runCommanderGameWithPilot(
@@ -275,6 +292,19 @@ public final class ForgeBridge {
             int hardTimeoutSeconds,
             int stallTimeoutSeconds,
             int pilotSeat
+    ) throws Exception {
+        return runCommanderGameInternal(
+                deckPaths, logPath, hardTimeoutSeconds, stallTimeoutSeconds, pilotSeat, false
+        );
+    }
+
+    private static String runCommanderGameInternal(
+            String[] deckPaths,
+            String logPath,
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds,
+            int pilotSeat,
+            boolean returnVerifiedSeat
     ) throws Exception {
         validateRunArguments(deckPaths, hardTimeoutSeconds, stallTimeoutSeconds);
         if (pilotSeat >= deckPaths.length) {
@@ -556,7 +586,27 @@ public final class ForgeBridge {
                 .getWinningLobbyPlayer()
                 .getName()
                 .trim();
-        return winner;
+        if (!returnVerifiedSeat) return winner;
+
+        // Do not infer a tournament result from card names or lobby-player text:
+        // two faces, punctuation, and even user-renamed decks need no aliases.
+        // Forge's final GameOutcome provides the exact lobby player who won.
+        forge.LobbyPlayer winningPlayer = game.getOutcome().getWinningLobbyPlayer();
+        int winningSeat = -1;
+        for (int seat = 0; seat < players.size(); seat++) {
+            if (players.get(seat).getPlayer() == winningPlayer) {
+                if (winningSeat != -1) {
+                    throw new IllegalStateException(
+                            "Forge winner belongs to multiple registered seats; no result awarded");
+                }
+                winningSeat = seat;
+            }
+        }
+        if (winningSeat == -1) {
+            throw new IllegalStateException(
+                    "Forge winner does not belong to the registered Commander pod; no result awarded");
+        }
+        return "HOUSE-VERIFIED-SEAT:" + winningSeat;
     }
 
     private static void validateRunArguments(
