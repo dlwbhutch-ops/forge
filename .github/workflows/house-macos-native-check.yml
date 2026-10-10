@@ -1,0 +1,80 @@
+name: HOUSE Mac Native Package Verification
+
+on:
+  push:
+    branches:
+      - 'feature/house-macos-art-validation-20261010'
+    paths:
+      - '.github/workflows/house-macos-native-check.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  verify-package:
+    name: "Native macOS ${{ matrix.kind }}"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: Apple-Silicon
+            runner: macos-15
+            arch: arm64
+            artifact: HOUSE-Commander-Lab-0.18-macOS-Apple-Silicon
+          - kind: Intel
+            runner: macos-15-intel
+            arch: x86_64
+            artifact: HOUSE-Commander-Lab-0.18-macOS-Intel
+    steps:
+      - name: Download platform-specific completed release
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38063353210
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ matrix.artifact }}
+          path: downloaded
+
+      - name: Validate original ZIP, launch permissions, native runtime and Forge gameplay
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NATIVE_MAC_RUNNER=$(uname -m)"
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          unzip -qq downloaded/*.zip -d extracted
+          APP="$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test -n "$APP"
+          test -x "$APP/HOUSE-Commander-Lab.command"
+          test -s "$APP/HOUSE-Commander-Lab.jar"
+          JAVA="$APP/runtime/Contents/Home/bin/java"
+          test -x "$JAVA"
+          /usr/bin/lipo -archs "$JAVA" | grep -w "${{ matrix.arch }}"
+          "$JAVA" -version
+          "$JAVA" -Xmx2g -Dfile.encoding=UTF-8 -Djava.awt.headless=true \
+            --add-opens=java.desktop/java.beans=ALL-UNNAMED \
+            --add-opens=java.desktop/javax.swing.border=ALL-UNNAMED \
+            --add-opens=java.desktop/javax.swing.event=ALL-UNNAMED \
+            --add-opens=java.desktop/sun.swing=ALL-UNNAMED \
+            --add-opens=java.desktop/java.awt.image=ALL-UNNAMED \
+            --add-opens=java.desktop/java.awt.color=ALL-UNNAMED \
+            --add-opens=java.desktop/sun.awt.image=ALL-UNNAMED \
+            --add-opens=java.desktop/javax.swing=ALL-UNNAMED \
+            --add-opens=java.base/java.util=ALL-UNNAMED \
+            --add-opens=java.base/java.lang=ALL-UNNAMED \
+            --add-opens=java.base/java.lang.reflect=ALL-UNNAMED \
+            --add-opens=java.base/java.text=ALL-UNNAMED \
+            --add-opens=java.desktop/java.awt.font=ALL-UNNAMED \
+            --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED \
+            --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+            --add-opens=java.base/java.nio=ALL-UNNAMED \
+            --add-opens=java.base/java.math=ALL-UNNAMED \
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+            --add-opens=java.base/java.net=ALL-UNNAMED \
+            -Duser.home="$RUNNER_TEMP/house-home" \
+            -cp "$APP/HOUSE-Commander-Lab.jar" \
+            com.housecommander.desktop.HouseDesktopSmoke | tee "$RUNNER_TEMP/mac-house-smoke.log"
+          grep -q 'DESKTOP_FORGE_PASS' "$RUNNER_TEMP/mac-house-smoke.log"
+          grep -q 'DESKTOP_LIVE_STATE_PASS' "$RUNNER_TEMP/mac-house-smoke.log"
+          echo "MAC_NATIVE_PACKAGE_PASS ${{ matrix.kind }}"
