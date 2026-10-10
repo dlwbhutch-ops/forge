@@ -286,6 +286,19 @@ public final class ForgeBridge {
         );
     }
 
+    /** Pilot variant of the verified-seat result (seat 0 is the human pilot). */
+    public static String runCommanderGameWithPilotVerifiedSeat(
+            String[] deckPaths,
+            int pilotSeat,
+            String logPath,
+            int hardTimeoutSeconds,
+            int stallTimeoutSeconds
+    ) throws Exception {
+        return runCommanderGameInternal(
+                deckPaths, logPath, hardTimeoutSeconds, stallTimeoutSeconds, pilotSeat, true
+        );
+    }
+
     private static String runCommanderGameInternal(
             String[] deckPaths,
             String logPath,
