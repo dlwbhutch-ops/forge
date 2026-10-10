@@ -588,10 +588,15 @@ public final class ForgeBridge {
                 .trim();
         if (!returnVerifiedSeat) return winner;
 
-        // Do not infer a tournament result from card names or lobby-player text:
-        // two faces, punctuation, and even user-renamed decks need no aliases.
-        // Forge's final GameOutcome provides the exact lobby player who won.
-        forge.LobbyPlayer winningPlayer = game.getOutcome().getWinningLobbyPlayer();
+        // Do not infer tournament results from card names or localized text.
+        return verifiedWinnerSeat(players, game.getOutcome().getWinningLobbyPlayer());
+    }
+
+    /** Resolve the outcome by exact registered player object identity only. */
+    static String verifiedWinnerSeat(List<RegisteredPlayer> players, forge.LobbyPlayer winningPlayer) {
+        if (winningPlayer == null || players == null || players.size() < 2) {
+            throw new IllegalStateException("Forge did not supply a valid winning participant");
+        }
         int winningSeat = -1;
         for (int seat = 0; seat < players.size(); seat++) {
             if (players.get(seat).getPlayer() == winningPlayer) {
