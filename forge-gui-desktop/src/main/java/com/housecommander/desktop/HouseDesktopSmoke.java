@@ -24,6 +24,7 @@ public final class HouseDesktopSmoke {
     private HouseDesktopSmoke() {}
 
     public static void main(String[] args) throws Exception {
+        DesktopPaintedTokenSmoke.verify();
         HousePackage pack = HouseDesktopRuntime.loadActivePackage();
         if (!pack.validation().passesStrictGate()) {
             throw new AssertionError(pack.validation().summary());
