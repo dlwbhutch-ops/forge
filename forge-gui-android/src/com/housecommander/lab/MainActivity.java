@@ -1067,7 +1067,11 @@ public final class MainActivity extends Activity {
     private void importPaintedTokens() {
         Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         picker.addCategory(Intent.CATEGORY_OPENABLE);
-        picker.setType("application/zip");
+        picker.setType("*/*");
+        picker.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/zip", "application/x-zip-compressed",
+                "application/octet-stream"
+        });
         startActivityForResult(picker, REQUEST_PAINTED_TOKENS);
     }
 
