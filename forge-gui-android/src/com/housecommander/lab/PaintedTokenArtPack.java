@@ -25,6 +25,7 @@ public final class PaintedTokenArtPack {
     private final File root;
     private final Map<String, List<Artwork>> artworks = new HashMap<>();
     private final Map<String, Artwork> byTokenId = new HashMap<>();
+    private final List<GalleryEntry> gallery = new ArrayList<>();
     private int count;
 
     static final class Manifest {
@@ -35,6 +36,8 @@ public final class PaintedTokenArtPack {
     static final class Artwork {
         String id;
         String tokenId;
+        boolean galleryOnly;
+        String releaseSet;
         String name;
         String filename;
         Integer power;
@@ -50,6 +53,33 @@ public final class PaintedTokenArtPack {
 
     public synchronized int size() { return count; }
 
+    /** The gallery keeps every illustration, including alternate/concept variants
+     *  that are not official Forge gameplay tokens. */
+    public static final class GalleryEntry {
+        public final String id;
+        public final String name;
+        public final String tokenId;
+        public final String releaseSet;
+        public final String type;
+        public final boolean galleryOnly;
+        public final Integer power;
+        public final Integer toughness;
+        public final Integer baseLoyalty;
+        public final File file;
+
+        private GalleryEntry(Artwork a, File root) {
+            id = a.id; name = a.name; tokenId = a.tokenId;
+            releaseSet = a.releaseSet; type = a.type;
+            galleryOnly = a.galleryOnly;
+            power = a.power; toughness = a.toughness; baseLoyalty = a.baseLoyalty;
+            file = new File(root, a.filename);
+        }
+    }
+
+    public synchronized List<GalleryEntry> entries() {
+        return Collections.unmodifiableList(new ArrayList<>(gallery));
+    }
+
     private static String normalize(String text) {
         return text == null ? "" : text.toLowerCase(Locale.ROOT)
                 .replaceAll("\\s+token$", "").trim();
@@ -57,7 +87,7 @@ public final class PaintedTokenArtPack {
 
     public synchronized File find(LiveGameState.CardState card) {
         if (card == null || !card.token()) return null;
-        String key = card.imageKey().replaceFirst("^t:", "");
+        String key = card.imageKey() == null ? "" : card.imageKey().replaceFirst("^t:", "");
         Artwork exact = byTokenId.get(key);
         if (exact != null && exact.filename != null) {
             File file = new File(root, exact.filename);
@@ -68,6 +98,11 @@ public final class PaintedTokenArtPack {
         Artwork choice = null;
         int top = Integer.MIN_VALUE;
         for (Artwork a : candidates) {
+            if (a.galleryOnly) continue;
+            String cardTypes = card.typeLine().toLowerCase(Locale.ROOT);
+            if ("planeswalker".equals(a.type) != cardTypes.contains("planeswalker")) continue;
+            if (("creature".equals(a.type) || "creatures".equals(a.type))
+                    && !cardTypes.contains("creature")) continue;
             int score = 0;
             if (card.typeLine().toLowerCase(Locale.ROOT).contains("planeswalker")
                     && "planeswalker".equals(a.type)) score += 100;
@@ -86,6 +121,7 @@ public final class PaintedTokenArtPack {
     public synchronized void reload() {
         artworks.clear();
         byTokenId.clear();
+        gallery.clear();
         count = 0;
         File manifestFile = new File(root, "manifest.json");
         if (!manifestFile.isFile()) return;
@@ -97,11 +133,17 @@ public final class PaintedTokenArtPack {
                 if (artwork == null || artwork.filename == null || artwork.name == null
                         || !artwork.filename.matches("art/[a-z0-9_]+\\.webp")) continue;
                 if (!new File(root, artwork.filename).isFile()) continue;
-                artworks.computeIfAbsent(normalize(artwork.name), k -> new ArrayList<>()).add(artwork);
-                if (artwork.tokenId != null && !artwork.tokenId.isEmpty()) byTokenId.put(artwork.tokenId, artwork);
+                gallery.add(new GalleryEntry(artwork, root));
+                if (!artwork.galleryOnly) {
+                    artworks.computeIfAbsent(normalize(artwork.name), k -> new ArrayList<>()).add(artwork);
+                    if (artwork.tokenId != null && !artwork.tokenId.isEmpty()) {
+                        // First definition wins in legacy art packs; new packs enforce uniqueness.
+                        byTokenId.putIfAbsent(artwork.tokenId, artwork);
+                    }
+                }
                 count++;
             }
-        } catch (Exception ignored) { artworks.clear(); byTokenId.clear(); count = 0; }
+        } catch (Exception ignored) { artworks.clear(); byTokenId.clear(); gallery.clear(); count = 0; }
     }
 
     public synchronized int install(Context context, Uri uri) throws IOException {
@@ -146,7 +188,17 @@ public final class PaintedTokenArtPack {
                 Manifest m = new Gson().fromJson(reader, Manifest.class);
                 if (m == null || m.schema != 1 || m.artworks == null || m.artworks.isEmpty())
                     throw new IOException("Unsupported token art manifest");
+                Set<String> uniqueIds = new HashSet<>();
+                Set<String> activeTokenIds = new HashSet<>();
                 for (Artwork a : m.artworks) {
+                    if (a != null && (a.id == null || a.id.isEmpty()
+                            || !uniqueIds.add(a.id))) {
+                        throw new IOException("Missing or duplicate artwork identifier");
+                    }
+                    if (a != null && !a.galleryOnly && a.tokenId != null
+                            && !a.tokenId.isEmpty() && !activeTokenIds.add(a.tokenId)) {
+                        throw new IOException("Multiple artworks assigned to one Forge token: " + a.tokenId);
+                    }
                     if (a == null || a.filename == null || !a.filename.matches("art/[a-z0-9_]+\\.webp")
                             || !new File(stage, a.filename).isFile())
                         throw new IOException("Missing token art: " + (a == null ? "null" : a.filename));

@@ -6,6 +6,7 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
@@ -85,6 +86,7 @@ public final class MainActivity extends Activity {
     private boolean technicalLogVisible;
     private DeckLibraryController libraryController;
     private AndroidCardArtCache cardArtCache;
+    private Button tokenGalleryButton;
     private BroadcastSettings broadcastSettings = new BroadcastSettings();
     private AndroidTournamentTable tournamentTable;
     private AndroidTournamentTable fullScreenTable;
@@ -170,9 +172,12 @@ public final class MainActivity extends Activity {
                 try {
                     int installed = cardArtCache.importPaintedTokenPack(data.getData());
                     refreshWatchView();
+                    if (tokenGalleryButton != null) tokenGalleryButton.setText("Token artwork gallery · "
+                            + installed + " installed");
                     new AlertDialog.Builder(this).setTitle("Painted token art installed")
                             .setMessage(installed + " hand-drawn token images are now available offline. "
                                     + "Forge still controls token abilities, counters, and stats.")
+                            .setNeutralButton("Browse artwork", (dialog, which) -> showPaintedTokenGallery())
                             .setPositiveButton("OK", null).show();
                 } catch (Exception error) {
                     new AlertDialog.Builder(this).setTitle("Token art import failed")
@@ -214,6 +219,9 @@ public final class MainActivity extends Activity {
         version.setAlpha(0.75f);
         root.addView(version);
         CardUpdatesUi.add(this, root);
+        tokenGalleryButton = playbackButton("Token artwork gallery · "
+                + cardArtCache.paintedTokenCount() + " installed", v -> showPaintedTokenGallery());
+        root.addView(tokenGalleryButton);
 
         String device = Build.MANUFACTURER
                 + " "
@@ -989,10 +997,81 @@ public final class MainActivity extends Activity {
                 android.view.WindowManager.LayoutParams.MATCH_PARENT);
     }
 
+    /** The gallery is a visual catalog, not a source of Magic card definitions. */
+    private void showPaintedTokenGallery() {
+        List<PaintedTokenArtPack.GalleryEntry> all = cardArtCache.paintedTokenGallery();
+        if (all.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Hand-drawn MTG token artwork")
+                    .setMessage("No painted art pack installed yet. Import the complete token ZIP "
+                            + "to browse all 66 illustrations. Existing Forge token rules are unchanged.")
+                    .setPositiveButton("Import artwork ZIP", (dialog, which) -> importPaintedTokens())
+                    .setNegativeButton("Close", null).show();
+            return;
+        }
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(8), dp(12), dp(8), dp(8));
+        ImageView illustration = new ImageView(this);
+        illustration.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        illustration.setAdjustViewBounds(true);
+        panel.addView(illustration, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(410)));
+        TextView description = text("", 13, false);
+        description.setTextIsSelectable(true);
+        panel.addView(description);
+        LinearLayout navigation = new LinearLayout(this);
+        navigation.setOrientation(LinearLayout.HORIZONTAL);
+        Button previous = playbackButton("Previous", v -> {});
+        Button next = playbackButton("Next", v -> {});
+        navigation.addView(previous, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        navigation.addView(next, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        panel.addView(navigation);
+
+        int[] index = {0};
+        Runnable display = () -> {
+            PaintedTokenArtPack.GalleryEntry entry = all.get(index[0]);
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = 2;
+            Bitmap bitmap = BitmapFactory.decodeFile(entry.file.getAbsolutePath(), options);
+            if (bitmap == null) illustration.setImageDrawable(null);
+            else illustration.setImageBitmap(bitmap);
+            StringBuilder info = new StringBuilder((index[0] + 1) + "/" + all.size()
+                    + " • " + entry.name);
+            if (entry.releaseSet != null && !entry.releaseSet.isEmpty()) {
+                info.append(" • ").append(entry.releaseSet);
+            }
+            if (entry.power != null && entry.toughness != null) {
+                info.append(" • ").append(entry.power).append("/").append(entry.toughness);
+            } else if (entry.baseLoyalty != null) {
+                info.append(" • ").append(entry.baseLoyalty).append(" base loyalty");
+            }
+            info.append(entry.galleryOnly
+                    ? "\nAlternate/concept artwork — gallery only; no new Forge token rules."
+                    : "\nMatched to Forge token artwork; official game text, stats, and counters are unchanged.");
+            description.setText(info.toString());
+            previous.setEnabled(index[0] > 0);
+            next.setEnabled(index[0] + 1 < all.size());
+        };
+        previous.setOnClickListener(v -> { if (index[0] > 0) { index[0]--; display.run(); } });
+        next.setOnClickListener(v -> { if (index[0] + 1 < all.size()) { index[0]++; display.run(); } });
+        display.run();
+        new AlertDialog.Builder(this).setTitle("HOUSE token art • " + all.size() + " illustrations")
+                .setView(panel)
+                .setPositiveButton("Close", null).show();
+    }
+
     private void importPaintedTokens() {
         Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         picker.addCategory(Intent.CATEGORY_OPENABLE);
-        picker.setType("application/zip");
+        picker.setType("*/*");
+        picker.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/zip", "application/x-zip-compressed",
+                "application/octet-stream"
+        });
         startActivityForResult(picker, REQUEST_PAINTED_TOKENS);
     }
 

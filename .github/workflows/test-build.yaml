@@ -20,7 +20,7 @@ jobs:
           cache: 'maven'
 
       - name: Synchronize the pinned HOUSE Forge engine and set data
-        if: github.ref_name == 'fix/house-attack-worker-20261008' || github.head_ref == 'fix/house-attack-worker-20261008' || github.ref_name == 'feature/reality-fracture-complete-20261009' || github.head_ref == 'feature/reality-fracture-complete-20261009'
+        if: github.ref_name == 'fix/complete-token-gallery-20261010' || github.head_ref == 'fix/complete-token-gallery-20261010' || github.ref_name == 'fix/house-attack-worker-20261008' || github.head_ref == 'fix/house-attack-worker-20261008' || github.ref_name == 'feature/reality-fracture-complete-20261009' || github.head_ref == 'feature/reality-fracture-complete-20261009'
         run: python3 .github/scripts/refresh-house-forge.py
 
       - name: Install virtual framebuffer (if not available) to allow running GUI on a headless server

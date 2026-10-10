@@ -103,6 +103,10 @@ public final class AndroidCardArtCache {
 
     public int paintedTokenCount() { return paintedTokens.size(); }
 
+    public java.util.List<PaintedTokenArtPack.GalleryEntry> paintedTokenGallery() {
+        return paintedTokens.entries();
+    }
+
     public int importPaintedTokenPack(android.net.Uri zip) throws java.io.IOException {
         int count = paintedTokens.install(context, zip);
         bitmaps.evictAll();
