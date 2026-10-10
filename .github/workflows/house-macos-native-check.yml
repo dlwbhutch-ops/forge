@@ -29,6 +29,9 @@ jobs:
             arch: x86_64
             artifact: HOUSE-Commander-Lab-0.18-macOS-Intel
     steps:
+      - name: Checkout HOUSE test fixtures (not bundled in end-user app)
+        uses: actions/checkout@v4
+
       - name: Download platform-specific completed release
         uses: actions/download-artifact@v4
         with:
