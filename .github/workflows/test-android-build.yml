@@ -2,9 +2,9 @@ name: Test Android build
 
 on:
   push:
-    paths: [ 'forge-gui-android/**' ]
+    paths: [ 'forge-gui-android/**', '.github/workflows/test-android-build.yml', '.github/scripts/refresh-house-forge.py' ]
   pull_request:
-    paths: [ 'forge-gui-android/**' ]
+    paths: [ 'forge-gui-android/**', '.github/workflows/test-android-build.yml', '.github/scripts/refresh-house-forge.py' ]
 
 jobs:
   build:
