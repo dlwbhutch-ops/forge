@@ -33,3 +33,20 @@ jobs:
         run: |
           node --check forge-gui-android/assets/house-decklab/core.js
           node --check forge-gui-android/assets/house-decklab/app.js
+  android-activity-compile:
+    name: Compile Deck Lab Android Activity (API 35)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android 35 SDK
+        run: sdkmanager "platforms;android-35"
+      - name: Compile isolated Deck Lab Activity
+        run: |
+          mkdir -p build/decklab-android
+          javac -source 17 -target 17 -cp "$ANDROID_HOME/platforms/android-35/android.jar" -d build/decklab-android forge-gui-android/src/com/housecommander/lab/DeckLabActivity.java
