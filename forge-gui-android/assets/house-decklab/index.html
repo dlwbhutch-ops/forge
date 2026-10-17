@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HOUSE Commander Lab — Single-Deck Workbench</title>
+<style>
+:root{color-scheme:dark;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#101722;color:#e5ebf4}
+*{box-sizing:border-box}body{margin:0}button,select,textarea,input{font:inherit}
+header{background:linear-gradient(110deg,#18283c,#111b29);border-bottom:1px solid #354459;padding:21px max(18px,calc((100vw - 1270px)/2))}
+header h1{font-size:1.55rem;margin:0 0 3px;letter-spacing:.01em}.sub{color:#a8bdd4;font-size:.87rem}
+.layout{max-width:1270px;padding:20px 18px 45px;margin:auto;display:grid;grid-template-columns:310px minmax(0,1fr);gap:20px}
+.panel{background:#172232;border:1px solid #304257;border-radius:14px;padding:18px;margin-bottom:16px}
+.panel h2{font-size:1.12rem;margin:0 0 12px}.panel h3{font-size:.99rem;margin:14px 0 8px}
+label{display:block;margin:12px 0 6px;color:#cbd8e8;font-size:.9rem}
+select,textarea,input[type=file],input[type=text]{width:100%;padding:10px;background:#0d1724;color:#eaf1fa;border:1px solid #506077;border-radius:8px}
+textarea{min-height:76px;resize:vertical}input[type=file]{font-size:.79rem;max-width:100%}
+button{background:#68b7ff;color:#081626;border:0;padding:10px 13px;border-radius:8px;font-weight:650;cursor:pointer}
+button.secondary{background:#283b51;color:#e7eef8;border:1px solid #52667c}
+button:disabled{cursor:not-allowed;opacity:.42}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.note{color:#a7b8ca;font-size:.83rem}.warn{color:#f5d0a2}.okay{color:#9de2c0}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:#172232;border:1px solid #304257;padding:14px;border-radius:12px}
+.kpi b{display:block;font-size:1.6rem}.kpi small{color:#afc2d4}
+table{width:100%;border-collapse:collapse;font-size:.89rem}th{text-align:left;color:#abbdd1;font-size:.79rem;font-weight:600}td,th{padding:9px 7px;border-bottom:1px solid #324157}td:last-child{text-align:right}
+.scroll{overflow-x:auto}meter{width:100%;height:12px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{background:#283b51;border-radius:8px;padding:7px 9px;font-size:.83rem}
+.empty{background:#111c2b;border:1px dashed #5d7088;border-radius:10px;padding:22px;color:#b7c7d9}
+.swap{border:1px solid #3c5266;background:#111d2c;border-radius:10px;padding:14px;margin:10px 0;display:grid;grid-template-columns:24px 1fr;gap:12px}
+.swap strong{color:#9ce9c4}.swap .cut{color:#fac1b4}.swap small{display:block;color:#a8bcd0;margin-top:5px}
+#status{min-height:32px}.footer{color:#9db1c6;font-size:.79rem;padding-top:10px}
+@media(max-width:850px){.layout{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+<h1>HOUSE / Deck Lab <span style="color:#83c8ff">b256</span></h1>
+<div class="sub">Single-deck diagnosis · ownership-aware swaps · identity-first analysis · local sandbox</div>
+</header>
+<main class="layout">
+<aside>
+  <section class="panel">
+    <h2>1. Select deck</h2>
+    <label for="deckSelect">HOUSE gauntlet — 21 decks</label>
+    <select id="deckSelect"></select>
+    <div id="baseline" class="note" style="margin-top:12px"></div>
+    <div class="btnrow"><button class="secondary" id="demoGarth">Load provisional Garth list</button></div>
+    <label for="deckFile">Import a .dck or text decklist</label>
+    <input id="deckFile" type="file" accept=".dck,.txt,.dec,.csv,text/plain">
+    <p class="note">Only the Garth example is bundled. Aang/Jace and other decks require their current approved lists.</p>
+  </section>
+  <section class="panel">
+    <h2>2. Collection and card rules</h2>
+    <label for="collectionFile">ManaBox collection .csv</label>
+    <input type="file" id="collectionFile" accept=".csv">
+    <label for="allocationFile">Other-deck allocations .csv (optional)</label>
+    <input type="file" id="allocationFile" accept=".csv">
+    <div class="note">Allocation format: deck,card,quantity. Without it, owned cards are not confirmed available.</div>
+    <label for="oracleFile">Scryfall Oracle JSON (optional)</label>
+    <input type="file" id="oracleFile" accept=".json,application/json">
+    <div class="btnrow"><button id="sync" class="secondary">Fetch card rules (online)</button></div>
+    <p class="note">Online sync checks the selected deck and a capped sample of owned cards. For complete coverage, import verified Scryfall Oracle data. No rules are invented for unknown cards.</p>
+  </section>
+  <section class="panel">
+    <h2>3. Preserve its identity</h2>
+    <label for="theme">Core themes and mechanics, comma-separated</label>
+    <textarea id="theme" placeholder="Example: untap, activated ability, copy, mana"></textarea>
+    <label for="pins">Protected signature cards, one per line</label>
+    <textarea id="pins" placeholder="Example: Intruder Alarm"></textarea>
+    <p class="note">Pin the cards that define the deck. The analyzer never cuts a commander, pinned card or land.</p>
+    <div class="btnrow"><button id="analyze">Analyze this deck</button></div>
+  </section>
+</aside>
+<div>
+  <div class="kpis">
+    <div class="kpi"><small>Forge pod win rate</small><b id="rate">—</b></div>
+    <div class="kpi"><small>Pod wins / games</small><b id="record">—</b></div>
+    <div class="kpi"><small>Cards in list</small><b id="total">—</b></div>
+    <div class="kpi"><small>Oracle coverage</small><b id="coverage">—</b></div>
+  </div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <section class="panel">
+    <h2>Analysis and gaps</h2>
+    <div id="diagnostics" class="empty">Import a current decklist or load the provisional Garth list to begin.</div>
+  </section>
+  <section class="panel">
+    <h2>Suggested one-for-one replacements</h2>
+    <p class="note">Proposals are ranked heuristics, not simulated win-rate gains. Confirm Oracle text, originality, budget and role coverage. Only selected proposals appear in the exported deck revision.</p>
+    <div id="recommendations" class="empty">Recommendations are locked until a confirmed decklist and sufficient verified card metadata are available.</div>
+    <div class="btnrow"><button id="export" disabled>Export selected swaps as .dck</button></div>
+  </section>
+  <section class="panel">
+    <h2>Build → Test → Compare</h2>
+    <div class="chips"><span class="chip">Keep original deck</span><span class="chip">Apply selected changes only</span><span class="chip">Run Forge pods</span><span class="chip">Compare against 116-pod baseline</span></div>
+    <p class="note">The current b256 prototype reads local files in the browser. It does not alter Android installations, game state, Forge rules, existing inventory or saved match history.</p>
+  </section>
+  <div class="footer">HOUSE Commander Lab / b256 standalone development preview. Scryfall data attribution and API policies apply when using online metadata. No account needed; no files are uploaded to HOUSE servers.</div>
+</div>
+</main>
+<script src="examples/demo.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body></html>
