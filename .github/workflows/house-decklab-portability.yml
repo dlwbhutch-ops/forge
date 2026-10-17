@@ -43,10 +43,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - name: Install Android 35 SDK
-        run: sdkmanager "platforms;android-35"
+        run: |
+          java -version
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --install "platforms;android-35"
       - name: Compile isolated Deck Lab Activity
         run: |
           mkdir -p build/decklab-android
-          javac -source 17 -target 17 -cp "$ANDROID_HOME/platforms/android-35/android.jar" -d build/decklab-android forge-gui-android/src/com/housecommander/lab/DeckLabActivity.java
+          javac -source 17 -target 17 -cp "$ANDROID_SDK_ROOT/platforms/android-35/android.jar" -d build/decklab-android forge-gui-android/src/com/housecommander/lab/DeckLabActivity.java
