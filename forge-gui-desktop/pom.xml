@@ -315,6 +315,7 @@ try {
                 <filtering>false</filtering>
                 <includes>
                     <include>house19/**</include>
+                    <include>house-decklab/**</include>
                     <include>tokens/**</include>
                     <include>house-forge-runtime.id</include>
                     <include>house-forge-runtime.zip</include>

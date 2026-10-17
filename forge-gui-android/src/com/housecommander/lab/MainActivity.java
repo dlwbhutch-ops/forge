@@ -284,6 +284,11 @@ public final class MainActivity extends Activity {
         });
         root.addView(manageLibraryButton);
 
+        Button deckLab = button("Open Deck Lab (b256 preview)");
+        deckLab.setOnClickListener(v -> startActivity(
+                new Intent(MainActivity.this, DeckLabActivity.class)));
+        root.addView(deckLab);
+
         rosterButton = button("Select tournament roster");
         rosterButton.setOnClickListener(new View.OnClickListener() {
             @Override

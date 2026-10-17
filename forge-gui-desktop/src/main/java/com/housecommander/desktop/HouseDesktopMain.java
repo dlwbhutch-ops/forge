@@ -86,6 +86,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
 
     private final JButton importButton = new JButton("Import .dck / ManaBox .txt");
     private final JButton manageButton = new JButton("Manage Deck Library");
+    private final JButton deckLabButton = new JButton("Open Deck Lab (b256 preview)");
     private final JButton rosterButton = new JButton("Select Tournament Roster");
     private final JButton restoreButton = new JButton("Restore Default HOUSE Roster");
     private final JButton testButton = new JButton("Run 1 Literal Test Game");
@@ -199,11 +200,46 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
         JPanel buttons = new JPanel(new GridLayout(0, 1, 6, 6));
         buttons.add(importButton);
         buttons.add(manageButton);
+        buttons.add(deckLabButton);
         buttons.add(rosterButton);
         buttons.add(restoreButton);
         buttons.add(folderButton);
         panel.add(buttons, BorderLayout.EAST);
         return panel;
+    }
+
+
+    // Shared HTML/JS from Android assets is packaged once into the desktop JAR.
+    // Opening it in the default browser does not mutate HOUSE game or deck data.
+    private void openDeckLab() {
+        final String[] resources = {
+                "index.html", "core.js", "app.js", "examples/demo.js"
+        };
+        try {
+            if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                throw new java.io.IOException("This desktop does not support opening a browser.");
+            }
+            java.nio.file.Path folder = Files.createTempDirectory("house-decklab-");
+            folder.toFile().deleteOnExit();
+            for (String resource : resources) {
+                java.io.InputStream stream = HouseDesktopMain.class.getClassLoader()
+                        .getResourceAsStream("housecommander/house-decklab/" + resource);
+                if (stream == null) {
+                    throw new java.io.IOException("Deck Lab resource missing: " + resource);
+                }
+                java.nio.file.Path target = folder.resolve(resource);
+                Files.createDirectories(target.getParent());
+                target.toFile().deleteOnExit();
+                try (java.io.InputStream source = stream) {
+                    Files.copy(source, target);
+                }
+            }
+            Desktop.getDesktop().browse(folder.resolve("index.html").toUri());
+        } catch (Exception error) {
+            JOptionPane.showMessageDialog(this,
+                    "Deck Lab could not open: " + error.getMessage(),
+                    "Deck Lab", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private JPanel buildTournamentPanel() {
@@ -360,6 +396,7 @@ public final class HouseDesktopMain extends JFrame implements DesktopTournamentR
     private void wireActions() {
         importButton.addActionListener(event -> importDeck());
         manageButton.addActionListener(event -> manageLibrary());
+        deckLabButton.addActionListener(event -> openDeckLab());
         rosterButton.addActionListener(event -> selectRoster());
         restoreButton.addActionListener(event -> restoreDefaultRoster());
         folderButton.addActionListener(event -> openDataFolder());

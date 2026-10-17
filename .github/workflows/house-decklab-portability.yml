@@ -1,0 +1,53 @@
+name: HOUSE shared Deck Lab portability gates
+on:
+  push:
+    paths:
+      - 'forge-gui-android/assets/house-decklab/**'
+      - 'forge-gui-android/src/com/housecommander/lab/DeckLabActivity.java'
+      - 'forge-gui-android/src/com/housecommander/lab/MainActivity.java'
+      - 'forge-gui-android/src/main/AndroidManifest.xml'
+      - 'forge-gui-desktop/pom.xml'
+      - 'forge-gui-desktop/src/main/java/com/housecommander/desktop/HouseDesktopMain.java'
+      - 'house-decklab/**'
+      - '.github/workflows/house-decklab-portability.yml'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-core:
+    name: Node 22 on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run shared Deck Lab tests
+        run: node --test house-decklab/tests/portable.test.js
+      - name: Check script syntax
+        run: |
+          node --check forge-gui-android/assets/house-decklab/core.js
+          node --check forge-gui-android/assets/house-decklab/app.js
+  android-activity-compile:
+    name: Compile Deck Lab Android Activity (API 35)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android 35 SDK
+        run: |
+          java -version
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --install "platforms;android-35"
+      - name: Compile isolated Deck Lab Activity
+        run: |
+          mkdir -p build/decklab-android
+          javac -source 17 -target 17 -cp "$ANDROID_SDK_ROOT/platforms/android-35/android.jar" -d build/decklab-android forge-gui-android/src/com/housecommander/lab/DeckLabActivity.java
